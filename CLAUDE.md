@@ -51,6 +51,20 @@ bd close <id>         # Complete work
 <!-- END BEADS INTEGRATION -->
 
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked with Beads (`bd`), using the local Dolt DB and git remote sync. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage roles use the default five-label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context repo: read root `CONTEXT.md` if present and ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
 ## Build & Test
 
 _Add your build and test commands here_

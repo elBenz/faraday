@@ -1,19 +1,27 @@
-# Issue tracker: Local Markdown
+# Issue tracker: Beads
 
-Issues and PRDs for this repo live as markdown files in `.scratch/`.
+Issues for this repo live in Beads (`bd`), backed by a local Dolt database and synced through the git remote.
 
-## Conventions
+## Commands
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The PRD is `.scratch/<feature-slug>/PRD.md`
-- Implementation issues are `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- `bd prime` — show full workflow context and commands
+- `bd ready` — find available work
+- `bd show <id>` — view issue details
+- `bd update <id> --claim` — claim work
+- `bd close <id>` — complete work
+
+## Rules
+
+- Use `bd` for all task tracking.
+- Do not create markdown TODO lists for tracked work.
+- Do not use `.scratch/` as the issue tracker unless explicitly asked for a throwaway planning artifact.
+- Sync uses `refs/dolt/data` on the git remote.
+- `.beads/issues.jsonl` is a passive export, not the source of truth.
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+Create or update a Beads issue with `bd`.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Use `bd show <id>` unless the user gives another path or identifier.

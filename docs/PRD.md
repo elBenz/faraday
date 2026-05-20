@@ -22,6 +22,8 @@ During the active session, the daemon continuously scans for the beacon:
 
 The MVP targets personal macOS use first. It prioritizes behavioral effectiveness and robust local enforcement over dashboard polish, cloud features, or perfect anti-tamper security.
 
+The software should be released as an Apache-2.0 open-source app. Bring-your-own compatible iBeacons are a first-class setup path. Productization and possible future beacon kits are tracked separately in `docs/PRODUCT.md`; they must not make hardware purchase or paid software features required for core enforcement. Beacon compatibility guidance lives in `docs/BEACONS.md`.
+
 ## User Stories
 
 1. As a distracted Mac user, I want my Mac to require my phone to be physically away from my desk, so that I cannot keep checking my phone while working.
@@ -54,19 +56,25 @@ The MVP targets personal macOS use first. It prioritizes behavioral effectivenes
 28. As a distracted Mac user, I want the daemon to be harder to kill casually, so that weak-moment bypass requires meaningful effort.
 29. As a distracted Mac user, I want the MVP to work without cloud accounts, subscriptions, or an iOS app, so that it is cheap and private to build and use.
 30. As a distracted Mac user, I want the beacon to be a common configurable iBeacon, so that the prototype can use off-the-shelf hardware.
-31. As a distracted Mac user, I want the app to support beacon identifier allowlisting, so that nearby unrelated BLE devices do not affect enforcement.
-32. As a distracted Mac user, I want the app to expose enough status for a future dashboard, so that focus stats can be added later without changing enforcement logic.
-33. As a future contributor, I want enforcement logic separated from BLE scanning, so that the state machine can be tested without Bluetooth hardware.
-34. As a future contributor, I want the lock mechanism abstracted behind an interface, so that tests can verify lock decisions without locking the developer's Mac.
-35. As a future contributor, I want calibration data modeled separately from live RSSI observations, so that threshold logic remains simple and testable.
-36. As a future contributor, I want launchd integration documented, so that the daemon can be installed, restarted, and removed predictably.
-37. As a future user, I want clear language that this is B-level anti-bypass, not impossible security, so that expectations are honest.
+31. As a distracted Mac user, I want bring-your-own compatible beacons to be a first-class setup path, so that I can use Faraday without buying hardware from Faraday.
+32. As a distracted Mac user, I want a compatibility list for tested beacons, so that I can choose hardware with confidence.
+33. As a distracted Mac user, I want the app to support beacon identifier allowlisting, so that nearby unrelated BLE devices do not affect enforcement.
+34. As a distracted Mac user, I want the app to expose enough status for a future dashboard, so that focus stats can be added later without changing enforcement logic.
+35. As a future contributor, I want the full app to be open source under Apache-2.0, so that the enforcement behavior is inspectable and reusable.
+36. As a future contributor, I want enforcement logic separated from BLE scanning, so that the state machine can be tested without Bluetooth hardware.
+37. As a future contributor, I want the lock mechanism abstracted behind an interface, so that tests can verify lock decisions without locking the developer's Mac.
+38. As a future contributor, I want calibration data modeled separately from live RSSI observations, so that threshold logic remains simple and testable.
+39. As a future contributor, I want launchd integration documented, so that the daemon can be installed, restarted, and removed predictably.
+40. As a future user, I want clear language that this is B-level anti-bypass, not impossible security, so that expectations are honest.
 
 ## Implementation Decisions
 
 - Build the core as a native Swift macOS daemon/app for robustness.
 - Use CoreBluetooth for BLE scanning.
+- Release the full macOS app/daemon as Apache-2.0 open source.
 - Target configurable iBeacon hardware for the first prototype.
+- Treat bring-your-own compatible beacons as a first-class setup path.
+- Maintain `docs/BEACONS.md` as the compatibility list before any hardware sales.
 - Identify the phone-attached beacon by UUID plus major/minor, not by Bluetooth device name.
 - Treat the iPhone itself as out of scope for sensing. The beacon attached to the iPhone/case is the sensed object.
 - Do not build an iOS app for MVP.
@@ -174,7 +182,10 @@ The MVP targets personal macOS use first. It prioritizes behavioral effectivenes
 - Next.js dashboard for MVP.
 - Cloud accounts, sync, teams, or analytics.
 - Cross-platform support.
-- Commercial hardware design.
+- Commercial hardware design for MVP.
+- Required proprietary beacon hardware.
+- Ecommerce, fulfillment, or branded beacon kit work for MVP.
+- Paid software features.
 - Perfect anti-tamper enforcement against a determined local admin.
 - Blocking specific iPhone apps.
 - Managing phone notifications.
@@ -187,5 +198,7 @@ Brick validates the physical-key/distraction-blocking product category, but it u
 The critical product truth is behavioral, not only technical. BLE detection working in isolation is not sufficient. The MVP succeeds only if it prevents phone-at-desk behavior during real work sessions without causing so many false lockouts that the user removes the tool.
 
 Recommended first hardware purchase: configurable coin/button iBeacon with custom UUID, adjustable transmit power, adjustable advertising interval, and replaceable or rechargeable battery.
+
+Recommended first productization doc: `docs/PRODUCT.md`, which tracks open-source posture, bring-your-own beacon compatibility, and possible future beacon kits without expanding MVP software scope.
 
 Recommended first prototype name: Faraday.

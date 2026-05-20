@@ -1,6 +1,7 @@
 {
   "name": "faraday",
   "private": true,
+  "license": "Apache-2.0",
   "dependencies": {},
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.5.10"
