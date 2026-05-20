@@ -2,6 +2,10 @@
   "name": "faraday",
   "private": true,
   "license": "Apache-2.0",
+  "scripts": {
+    "typecheck": "node scripts/run-swift-package.js build",
+    "test": "node scripts/run-swift-package.js test"
+  },
   "dependencies": {},
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.5.10"
