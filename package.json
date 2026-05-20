@@ -1,0 +1,8 @@
+{
+  "name": "faraday",
+  "private": true,
+  "dependencies": {},
+  "devDependencies": {
+    "@ai-hero/sandcastle": "^0.5.10"
+  }
+}
