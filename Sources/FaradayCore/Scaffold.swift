@@ -103,6 +103,7 @@ public enum SessionState: Equatable {
     case idle
     case waitingForFar
     case active
+    case unsafe
 }
 
 public enum SessionCommand: Equatable {
@@ -153,7 +154,11 @@ public struct FocusSessionStateMachine {
             state = .active
             return .beginSession
         case (.active, .near), (.active, .missing):
+            state = .unsafe
             return .requestLock
+        case (.unsafe, .far):
+            state = .active
+            return .none
         default:
             return .none
         }

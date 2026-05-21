@@ -76,6 +76,27 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func unsafeProximityLocksOnceUntilFarConfirmedAgain() {
+        let enforcement = SpyEnforcementAdapter()
+        let core = FaradayCore(enforcement: enforcement)
+
+        _ = core.startSession(classification: .near)
+        _ = core.handle(classification: .far)
+
+        let firstUnsafeCommand = core.handle(classification: .near)
+        let repeatedUnsafeCommand = core.handle(classification: .near)
+        let clearUnsafeCommand = core.handle(classification: .far)
+        let unsafeAgainCommand = core.handle(classification: .near)
+
+        #expect(firstUnsafeCommand == .requestLock)
+        #expect(repeatedUnsafeCommand == .none)
+        #expect(clearUnsafeCommand == .none)
+        #expect(unsafeAgainCommand == .requestLock)
+        #expect(core.state == .unsafe)
+        #expect(enforcement.requestLockCount == 2)
+    }
+
+    @Test
     func allowlistScannerEmitsOnlyMatchingBeaconObservations() {
         let allowlisted = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 100, minor: 7)
         let scanner = BeaconAllowlistScanner(allowlist: [allowlisted])
