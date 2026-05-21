@@ -10,6 +10,57 @@ public struct BeaconObservation: Equatable {
     }
 }
 
+public struct BeaconIdentifier: Equatable, Hashable {
+    public let uuid: UUID
+    public let major: Int
+    public let minor: Int
+
+    public init(uuid: UUID, major: Int, minor: Int) {
+        self.uuid = uuid
+        self.major = major
+        self.minor = minor
+    }
+}
+
+public struct BeaconAdvertisement: Equatable {
+    public let identifier: BeaconIdentifier
+    public let timestamp: Date
+    public let rssi: Int
+
+    public init(identifier: BeaconIdentifier, timestamp: Date, rssi: Int) {
+        self.identifier = identifier
+        self.timestamp = timestamp
+        self.rssi = rssi
+    }
+}
+
+public final class BeaconAllowlistScanner {
+    private let allowlist: Set<BeaconIdentifier>
+    public private(set) var isScanning = false
+    public private(set) var observations: [BeaconObservation] = []
+
+    public init(allowlist: [BeaconIdentifier]) {
+        self.allowlist = Set(allowlist)
+    }
+
+    public func start() {
+        isScanning = true
+    }
+
+    public func stop() {
+        isScanning = false
+    }
+
+    public func ingest(_ advertisement: BeaconAdvertisement) {
+        guard isScanning else { return }
+        guard allowlist.contains(advertisement.identifier) else { return }
+
+        observations.append(
+            BeaconObservation(timestamp: advertisement.timestamp, rssi: advertisement.rssi)
+        )
+    }
+}
+
 public enum ProximityClassification: Equatable {
     case near
     case far

@@ -61,6 +61,38 @@ struct FaradayCoreScaffoldTests {
         #expect(command == .requestLock)
         #expect(enforcement.requestLockCount == 1)
     }
+
+    @Test
+    func allowlistScannerEmitsOnlyMatchingBeaconObservations() {
+        let allowlisted = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 100, minor: 7)
+        let scanner = BeaconAllowlistScanner(allowlist: [allowlisted])
+        let timestamp = Date(timeIntervalSince1970: 5_000)
+
+        scanner.start()
+        scanner.ingest(BeaconAdvertisement(identifier: allowlisted, timestamp: timestamp, rssi: -71))
+        scanner.ingest(BeaconAdvertisement(identifier: BeaconIdentifier(uuid: allowlisted.uuid, major: 100, minor: 8), timestamp: timestamp.addingTimeInterval(1), rssi: -40))
+
+        #expect(scanner.observations == [BeaconObservation(timestamp: timestamp, rssi: -71)])
+    }
+
+    @Test
+    func allowlistScannerRequiresStartAndStopsCleanly() {
+        let allowlisted = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 100, minor: 7)
+        let scanner = BeaconAllowlistScanner(allowlist: [allowlisted])
+        let timestamp = Date(timeIntervalSince1970: 6_000)
+        let advertisement = BeaconAdvertisement(identifier: allowlisted, timestamp: timestamp, rssi: -68)
+
+        scanner.ingest(advertisement)
+        #expect(scanner.observations.isEmpty)
+
+        scanner.start()
+        scanner.ingest(advertisement)
+        #expect(scanner.observations.count == 1)
+
+        scanner.stop()
+        scanner.ingest(advertisement)
+        #expect(scanner.observations.count == 1)
+    }
 }
 
 final class SpyEnforcementAdapter: EnforcementAdapting {

@@ -49,6 +49,17 @@ For each candidate beacon:
 - [ ] Battery life is acceptable for daily use.
 - [ ] Documentation includes setup/reset steps.
 
+## Manual scanner validation notes (allowlist)
+
+Use this flow to validate the beacon allowlist scanner against a real configurable iBeacon:
+
+1. Configure one beacon to the target UUID + major + minor.
+2. Configure a second beacon to a different major/minor under the same UUID.
+3. Start scanner and observe emitted `BeaconObservation` values.
+4. Confirm only the allowlisted identifier emits observations.
+5. Stop scanner and confirm no new observations are emitted while advertisements continue.
+6. Record desk and target-room RSSI ranges for later classifier tuning.
+
 ## Product boundary
 
 This compatibility list comes before selling hardware. Future recommended or branded beacon kits may package convenience, but Faraday must remain usable with compatible bring-your-own beacons.
