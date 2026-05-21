@@ -112,6 +112,7 @@ The software should be released as an Apache-2.0 open-source app. Bring-your-own
 - Overlay is a warning and UX layer, not the security boundary.
 - Use launchd for automatic startup and KeepAlive in MVP.
 - Serious personal-use mode should install as a root-owned LaunchDaemon requiring admin action to unload.
+- Record launchd posture/tradeoffs in ADRs (see `docs/adr/0001-launchd-weak-moment-resistance-posture.md`).
 - Accept that perfect enforcement is impossible when the user is local admin.
 - Design target is weak-moment resistance, not adversarial security.
 - Emergency Co-work Mode:

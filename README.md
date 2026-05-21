@@ -20,6 +20,8 @@ Planning and early scaffold phase. Primary docs:
 - [`docs/PRD.md`](docs/PRD.md) — software product requirements
 - [`docs/PRODUCT.md`](docs/PRODUCT.md) — open-source and hardware product strategy
 - [`docs/BEACONS.md`](docs/BEACONS.md) — beacon compatibility notes
+- [`docs/LAUNCHD.md`](docs/LAUNCHD.md) — launchd install/restart/remove + smoke tests
+- [`docs/adr/0001-launchd-weak-moment-resistance-posture.md`](docs/adr/0001-launchd-weak-moment-resistance-posture.md) — launch posture decision
 - [`CONTEXT.md`](CONTEXT.md) — domain vocabulary
 
 ## Development principles
