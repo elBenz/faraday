@@ -261,6 +261,57 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func emergencyCoworkModeDelayExtensionAndRecovery() {
+        let enforcement = SpyEnforcementAdapter()
+        let core = FaradayCore(enforcement: enforcement)
+        let start = Date(timeIntervalSince1970: 40_000)
+
+        _ = core.startSession(classification: .near, at: start)
+        _ = core.handle(classification: .far, at: start.addingTimeInterval(1))
+
+        let missingReason = core.requestEmergencyCowork(reason: "", at: start.addingTimeInterval(2))
+        #expect(missingReason == .emergencyReasonRequired)
+
+        let pending = core.requestEmergencyCowork(
+            reason: "Need MFA approval",
+            at: start.addingTimeInterval(2),
+            activationDelay: 30,
+            duration: 600
+        )
+        #expect(pending == .emergencyPending)
+
+        let lockSuppressed = core.handle(classification: .near, at: start.addingTimeInterval(3))
+        #expect(lockSuppressed == .none)
+        #expect(enforcement.requestLockCount == 0)
+
+        let active = core.tick(at: start.addingTimeInterval(32))
+        #expect(active == .emergencyActive)
+
+        let extension = core.extendEmergencyCowork(at: start.addingTimeInterval(100), duration: 600)
+        let extensionRefused = core.extendEmergencyCowork(at: start.addingTimeInterval(101), duration: 600)
+        #expect(extension == .emergencyExtended)
+        #expect(extensionRefused == .emergencyExtensionRefused)
+
+        let expired = core.tick(at: start.addingTimeInterval(1_301))
+        #expect(expired == .emergencyExpired)
+
+        let nearAfterExpiry = core.handle(classification: .near, at: start.addingTimeInterval(1_302))
+        let farRecovery = core.handle(classification: .far, at: start.addingTimeInterval(1_303))
+        let nearAfterRecovery = core.handle(classification: .near, at: start.addingTimeInterval(1_304))
+
+        #expect(nearAfterExpiry == .none)
+        #expect(farRecovery == .none)
+        #expect(nearAfterRecovery == .requestLock)
+        #expect(enforcement.requestLockCount == 1)
+
+        let eventKinds = core.readEvents().map(\.kind)
+        #expect(eventKinds.contains(.emergencyStarted))
+        #expect(eventKinds.contains(.emergencyExtended))
+        #expect(eventKinds.contains(.emergencyRefused))
+        #expect(eventKinds.contains(.emergencyExpired))
+    }
+
+    @Test
     func jsonPersistenceRoundTripsSettingsAndEvents() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

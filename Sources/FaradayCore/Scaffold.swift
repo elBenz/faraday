@@ -119,6 +119,12 @@ public enum SessionCommand: Equatable {
     case beginSession
     case endSession
     case requestLock
+    case emergencyReasonRequired
+    case emergencyPending
+    case emergencyActive
+    case emergencyExtended
+    case emergencyExtensionRefused
+    case emergencyExpired
 }
 
 public protocol EnforcementAdapting {
@@ -464,10 +470,18 @@ public final class JSONFaradayPersistence: FaradayPersisting {
 }
 
 public final class FaradayCore {
+    private enum EmergencyModeState {
+        case idle
+        case pending(activateAt: Date, duration: TimeInterval)
+        case active(expiresAt: Date, extensionUsed: Bool)
+    }
+
     private var sessionStateMachine: FocusSessionStateMachine
     private let enforcement: EnforcementAdapting
     private let persistence: FaradayPersisting
     private var lastClassification: ProximityClassification?
+    private var emergencyModeState: EmergencyModeState = .idle
+    private var requiresFarAfterEmergency = false
 
     public init(
         sessionStateMachine: FocusSessionStateMachine = FocusSessionStateMachine(),
@@ -507,25 +521,49 @@ public final class FaradayCore {
 
     @discardableResult
     public func handle(classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
-        let command = sessionStateMachine.receive(classification: classification, at: timestamp)
+        processEmergencyTimer(at: timestamp)
+
         lastClassification = classification
 
         if classification == .missing {
             persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .missingBeacon))
         }
 
+        if requiresFarAfterEmergency {
+            if classification == .far {
+                requiresFarAfterEmergency = false
+                if sessionStateMachine.state == .unsafe {
+                    _ = sessionStateMachine.receive(classification: .far, at: timestamp)
+                }
+            }
+            persistStatus()
+            return .none
+        }
+
+        let command = sessionStateMachine.receive(classification: classification, at: timestamp)
+
         if command == .beginSession {
             persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionBegan))
         }
 
         if command == .requestLock {
-            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .violation))
-            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .lockRequested))
-            enforcement.requestLock()
+            let isEmergencySuppressingLock: Bool
+            switch emergencyModeState {
+            case .pending, .active:
+                isEmergencySuppressingLock = true
+            case .idle:
+                isEmergencySuppressingLock = false
+            }
+
+            if !isEmergencySuppressingLock {
+                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .violation))
+                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .lockRequested))
+                enforcement.requestLock()
+            }
         }
 
         persistStatus()
-        return command
+        return command == .requestLock ? (isEmergencyActiveOrPending ? .none : .requestLock) : command
     }
 
     public func saveSettings(_ settings: FaradaySettings) {
@@ -552,8 +590,83 @@ public final class FaradayCore {
         persistence.loadEvents()
     }
 
+    @discardableResult
+    public func requestEmergencyCowork(
+        reason: String,
+        at timestamp: Date = Date(),
+        activationDelay: TimeInterval = 30,
+        duration: TimeInterval = 600
+    ) -> SessionCommand {
+        guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .emergencyReasonRequired
+        }
+
+        let safeDelay = min(max(activationDelay, 30), 60)
+        emergencyModeState = .pending(activateAt: timestamp.addingTimeInterval(safeDelay), duration: max(1, duration))
+        persistStatus()
+        return .emergencyPending
+    }
+
+    @discardableResult
+    public func extendEmergencyCowork(at timestamp: Date = Date(), duration: TimeInterval = 600) -> SessionCommand {
+        processEmergencyTimer(at: timestamp)
+
+        guard case let .active(expiresAt, extensionUsed) = emergencyModeState, !extensionUsed else {
+            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .emergencyRefused))
+            persistStatus()
+            return .emergencyExtensionRefused
+        }
+
+        emergencyModeState = .active(expiresAt: expiresAt.addingTimeInterval(max(1, duration)), extensionUsed: true)
+        persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .emergencyExtended))
+        persistStatus()
+        return .emergencyExtended
+    }
+
+    @discardableResult
+    public func tick(at timestamp: Date = Date()) -> SessionCommand {
+        processEmergencyTimer(at: timestamp)
+        persistStatus()
+
+        switch emergencyModeState {
+        case .pending:
+            return .emergencyPending
+        case .active:
+            return .emergencyActive
+        case .idle:
+            return requiresFarAfterEmergency ? .emergencyExpired : .none
+        }
+    }
+
     public var state: SessionState {
         sessionStateMachine.state
+    }
+
+    private var isEmergencyActiveOrPending: Bool {
+        switch emergencyModeState {
+        case .pending, .active:
+            return true
+        case .idle:
+            return false
+        }
+    }
+
+    private func processEmergencyTimer(at timestamp: Date) {
+        switch emergencyModeState {
+        case let .pending(activateAt, duration):
+            if timestamp >= activateAt {
+                emergencyModeState = .active(expiresAt: activateAt.addingTimeInterval(duration), extensionUsed: false)
+                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .emergencyStarted))
+            }
+        case let .active(expiresAt, _):
+            if timestamp >= expiresAt {
+                emergencyModeState = .idle
+                requiresFarAfterEmergency = true
+                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .emergencyExpired))
+            }
+        case .idle:
+            break
+        }
     }
 
     private func persistStatus() {
