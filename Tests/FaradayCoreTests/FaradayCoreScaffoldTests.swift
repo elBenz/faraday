@@ -231,6 +231,36 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func calibrationDerivesThresholdsAndConfidenceFromGuidedSamples() {
+        var engine = GuidedCalibrationEngine()
+
+        [-54, -56, -53, -55].forEach { engine.record(rssi: $0, at: .desk) }
+        [-74, -72, -73, -71].forEach { engine.record(rssi: $0, at: .doorwayHall) }
+        [-88, -90, -89, -87].forEach { engine.record(rssi: $0, at: .targetRoom) }
+
+        let output = engine.deriveThresholds(defaultNearThresholdRSSI: -65, defaultFarThresholdRSSI: -78)
+
+        #expect(output.nearThresholdRSSI == -64)
+        #expect(output.farThresholdRSSI == -81)
+        #expect(output.usedDefaults == false)
+        #expect(output.confidenceNotes.contains("Calibration complete across desk, doorway/hall, and target room."))
+        #expect(output.confidenceNotes.contains("Strong separation between desk and target room RSSI bands."))
+    }
+
+    @Test
+    func calibrationFallsBackToDefaultsWhenGuidedPathIncomplete() {
+        var engine = GuidedCalibrationEngine()
+        [-58, -59].forEach { engine.record(rssi: $0, at: .desk) }
+
+        let output = engine.deriveThresholds(defaultNearThresholdRSSI: -65, defaultFarThresholdRSSI: -78)
+
+        #expect(output.nearThresholdRSSI == -65)
+        #expect(output.farThresholdRSSI == -78)
+        #expect(output.usedDefaults == true)
+        #expect(output.confidenceNotes.contains("Calibration incomplete; using default thresholds."))
+    }
+
+    @Test
     func jsonPersistenceRoundTripsSettingsAndEvents() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

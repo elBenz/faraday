@@ -237,6 +237,105 @@ public struct FaradayCalibration: Equatable, Codable {
     }
 }
 
+public enum CalibrationZone: Equatable, Codable {
+    case desk
+    case doorwayHall
+    case targetRoom
+}
+
+public struct GuidedCalibrationOutput: Equatable, Codable {
+    public let nearThresholdRSSI: Int
+    public let farThresholdRSSI: Int
+    public let confidenceNotes: [String]
+    public let usedDefaults: Bool
+
+    public init(nearThresholdRSSI: Int, farThresholdRSSI: Int, confidenceNotes: [String], usedDefaults: Bool) {
+        self.nearThresholdRSSI = nearThresholdRSSI
+        self.farThresholdRSSI = farThresholdRSSI
+        self.confidenceNotes = confidenceNotes
+        self.usedDefaults = usedDefaults
+    }
+}
+
+public struct GuidedCalibrationEngine {
+    public private(set) var calibration: FaradayCalibration
+
+    public init(calibration: FaradayCalibration = FaradayCalibration()) {
+        self.calibration = calibration
+    }
+
+    public mutating func record(rssi: Int, at zone: CalibrationZone) {
+        switch zone {
+        case .desk:
+            calibration = FaradayCalibration(
+                deskRSSI: calibration.deskRSSI + [rssi],
+                doorwayRSSI: calibration.doorwayRSSI,
+                targetRoomRSSI: calibration.targetRoomRSSI
+            )
+        case .doorwayHall:
+            calibration = FaradayCalibration(
+                deskRSSI: calibration.deskRSSI,
+                doorwayRSSI: calibration.doorwayRSSI + [rssi],
+                targetRoomRSSI: calibration.targetRoomRSSI
+            )
+        case .targetRoom:
+            calibration = FaradayCalibration(
+                deskRSSI: calibration.deskRSSI,
+                doorwayRSSI: calibration.doorwayRSSI,
+                targetRoomRSSI: calibration.targetRoomRSSI + [rssi]
+            )
+        }
+    }
+
+    public func deriveThresholds(defaultNearThresholdRSSI: Int, defaultFarThresholdRSSI: Int) -> GuidedCalibrationOutput {
+        guard
+            !calibration.deskRSSI.isEmpty,
+            !calibration.doorwayRSSI.isEmpty,
+            !calibration.targetRoomRSSI.isEmpty
+        else {
+            return GuidedCalibrationOutput(
+                nearThresholdRSSI: defaultNearThresholdRSSI,
+                farThresholdRSSI: defaultFarThresholdRSSI,
+                confidenceNotes: ["Calibration incomplete; using default thresholds."],
+                usedDefaults: true
+            )
+        }
+
+        let deskMedian = median(calibration.deskRSSI)
+        let doorwayMedian = median(calibration.doorwayRSSI)
+        let targetMedian = median(calibration.targetRoomRSSI)
+
+        let nearThreshold = Int((Double(deskMedian + doorwayMedian) / 2.0).rounded())
+        let farThreshold = Int((Double(doorwayMedian + targetMedian) / 2.0).rounded())
+        let separation = deskMedian - targetMedian
+
+        var notes = ["Calibration complete across desk, doorway/hall, and target room."]
+        notes.append(
+            separation >= 20
+                ? "Strong separation between desk and target room RSSI bands."
+                : "Limited separation between desk and target room RSSI bands; expect lower confidence."
+        )
+
+        return GuidedCalibrationOutput(
+            nearThresholdRSSI: nearThreshold,
+            farThresholdRSSI: farThreshold,
+            confidenceNotes: notes,
+            usedDefaults: false
+        )
+    }
+
+    private func median(_ values: [Int]) -> Int {
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+
+        if sorted.count % 2 == 1 {
+            return sorted[middle]
+        }
+
+        return Int((Double(sorted[middle - 1] + sorted[middle]) / 2.0).rounded())
+    }
+}
+
 public enum FaradayEventKind: Equatable, Codable {
     case sessionWaitingForFar
     case sessionBegan
