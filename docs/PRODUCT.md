@@ -31,6 +31,7 @@ If demand appears, sell a curated kit using third-party beacon hardware.
 - Prefer preconfigured or easy-to-configure settings.
 - Sell convenience, reliability, and reduced setup friction.
 - Continue supporting bring-your-own beacons.
+- Gate this stage on the viability decision document in `docs/BEACON_KIT_VIABILITY.md`.
 
 ### Stage 3 — Faraday Beacon Kit
 

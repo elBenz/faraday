@@ -171,6 +171,7 @@ The software should be released as an Apache-2.0 open-source app. Bring-your-own
   - Emergency mode used no more than twice per week.
   - User does not kill, unload, or uninstall daemon during test period.
 - Run `docs/MVP_VALIDATION.md` as the standard end-to-end validation harness and record metric pass/fail evidence.
+- Use validation outcomes plus `docs/BEACONS.md` tested-device evidence to update the product-strategy decision in `docs/BEACON_KIT_VIABILITY.md`.
 
 ## Out of Scope
 

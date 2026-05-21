@@ -22,6 +22,7 @@ Planning and early scaffold phase. Primary docs:
 - [`docs/BEACONS.md`](docs/BEACONS.md) — beacon compatibility notes
 - [`docs/LAUNCHD.md`](docs/LAUNCHD.md) — launchd install/restart/remove + smoke tests
 - [`docs/MVP_VALIDATION.md`](docs/MVP_VALIDATION.md) — end-to-end manual validation harness and success-metric worksheet
+- [`docs/BEACON_KIT_VIABILITY.md`](docs/BEACON_KIT_VIABILITY.md) — post-validation recommendation on third-party beacon kit strategy
 - [`docs/adr/0001-launchd-weak-moment-resistance-posture.md`](docs/adr/0001-launchd-weak-moment-resistance-posture.md) — launch posture decision
 - [`CONTEXT.md`](CONTEXT.md) — domain vocabulary
 
