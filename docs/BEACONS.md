@@ -56,9 +56,10 @@ Use this flow to validate the beacon allowlist scanner against a real configurab
 1. Configure one beacon to the target UUID + major + minor.
 2. Configure a second beacon to a different major/minor under the same UUID.
 3. Start scanner and observe emitted `BeaconObservation` values.
-4. Confirm only the allowlisted identifier emits observations.
-5. Stop scanner and confirm no new observations are emitted while advertisements continue.
-6. Record desk and target-room RSSI ranges for later classifier tuning.
+4. Confirm `firstValidatedBeacon` captures the first allowlisted advertisement (UUID/major/minor, timestamp, RSSI).
+5. Confirm only the allowlisted identifier emits observations.
+6. Stop scanner and confirm no new observations are emitted while advertisements continue.
+7. Record desk and target-room RSSI ranges for later classifier tuning.
 
 ## Product boundary
 

@@ -38,6 +38,7 @@ public final class BeaconAllowlistScanner {
     private let allowlist: Set<BeaconIdentifier>
     public private(set) var isScanning = false
     public private(set) var observations: [BeaconObservation] = []
+    public private(set) var firstValidatedBeacon: BeaconAdvertisement?
 
     public init(allowlist: [BeaconIdentifier]) {
         self.allowlist = Set(allowlist)
@@ -45,6 +46,7 @@ public final class BeaconAllowlistScanner {
 
     public func start() {
         isScanning = true
+        firstValidatedBeacon = nil
     }
 
     public func stop() {
@@ -54,6 +56,10 @@ public final class BeaconAllowlistScanner {
     public func ingest(_ advertisement: BeaconAdvertisement) {
         guard isScanning else { return }
         guard allowlist.contains(advertisement.identifier) else { return }
+
+        if firstValidatedBeacon == nil {
+            firstValidatedBeacon = advertisement
+        }
 
         observations.append(
             BeaconObservation(timestamp: advertisement.timestamp, rssi: advertisement.rssi)

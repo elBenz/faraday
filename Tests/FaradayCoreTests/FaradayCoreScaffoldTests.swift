@@ -127,6 +127,25 @@ struct FaradayCoreScaffoldTests {
         scanner.ingest(advertisement)
         #expect(scanner.observations.count == 1)
     }
+
+    @Test
+    func allowlistScannerValidatesFirstMatchingBeacon() {
+        let allowlisted = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 100, minor: 7)
+        let other = BeaconIdentifier(uuid: allowlisted.uuid, major: 999, minor: 1)
+        let scanner = BeaconAllowlistScanner(allowlist: [allowlisted])
+        let firstSeenAt = Date(timeIntervalSince1970: 7_000)
+
+        scanner.start()
+        scanner.ingest(BeaconAdvertisement(identifier: other, timestamp: firstSeenAt, rssi: -45))
+        #expect(scanner.firstValidatedBeacon == nil)
+
+        scanner.ingest(BeaconAdvertisement(identifier: allowlisted, timestamp: firstSeenAt.addingTimeInterval(1), rssi: -70))
+        scanner.ingest(BeaconAdvertisement(identifier: allowlisted, timestamp: firstSeenAt.addingTimeInterval(2), rssi: -80))
+
+        #expect(scanner.firstValidatedBeacon?.identifier == allowlisted)
+        #expect(scanner.firstValidatedBeacon?.timestamp == firstSeenAt.addingTimeInterval(1))
+        #expect(scanner.firstValidatedBeacon?.rssi == -70)
+    }
 }
 
 final class SpyEnforcementAdapter: EnforcementAdapting {
