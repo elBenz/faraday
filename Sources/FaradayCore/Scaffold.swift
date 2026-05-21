@@ -108,6 +108,7 @@ public enum SessionState: Equatable {
 public enum SessionCommand: Equatable {
     case none
     case showBeaconMissingAtStart
+    case showBeaconMustBeNearAtStart
     case beginSession
     case endSession
     case requestLock
@@ -132,9 +133,12 @@ public struct FocusSessionStateMachine {
         case .missing:
             state = .idle
             return .showBeaconMissingAtStart
-        case .near, .far, .uncertain:
+        case .near:
             state = .waitingForFar
             return .none
+        case .far, .uncertain:
+            state = .idle
+            return .showBeaconMustBeNearAtStart
         }
     }
 

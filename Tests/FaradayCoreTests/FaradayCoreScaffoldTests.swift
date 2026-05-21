@@ -39,6 +39,19 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func startRequiresBeaconToBeNear() {
+        var machine = FocusSessionStateMachine()
+
+        let farCommand = machine.start(classification: .far)
+        #expect(farCommand == .showBeaconMustBeNearAtStart)
+        #expect(machine.state == .idle)
+
+        let uncertainCommand = machine.start(classification: .uncertain)
+        #expect(uncertainCommand == .showBeaconMustBeNearAtStart)
+        #expect(machine.state == .idle)
+    }
+
+    @Test
     func sessionBecomesActiveAfterFarConfirmation() {
         var machine = FocusSessionStateMachine()
 
