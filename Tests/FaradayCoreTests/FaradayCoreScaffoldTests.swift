@@ -200,6 +200,51 @@ struct FaradayCoreScaffoldTests {
         #expect(scanner.firstValidatedBeacon?.timestamp == firstSeenAt.addingTimeInterval(1))
         #expect(scanner.firstValidatedBeacon?.rssi == -70)
     }
+
+    @Test
+    func persistenceCapturesSettingsStatusAndMajorEvents() {
+        let persistence = InMemoryFaradayPersistence()
+        let enforcement = SpyEnforcementAdapter()
+        let core = FaradayCore(
+            sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 1),
+            enforcement: enforcement,
+            persistence: persistence
+        )
+        let beacon = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 10, minor: 11)
+        let settings = FaradaySettings(beacon: beacon, nearThresholdRSSI: -70, farThresholdRSSI: -82)
+        let t0 = Date(timeIntervalSince1970: 20_000)
+
+        core.saveSettings(settings)
+        #expect(core.loadSettings() == settings)
+
+        _ = core.startSession(classification: .near, at: t0)
+        _ = core.handle(classification: .far, at: t0.addingTimeInterval(1))
+        _ = core.handle(classification: .missing, at: t0.addingTimeInterval(2.1))
+
+        let eventKinds = core.readEvents().map(\.kind)
+        #expect(eventKinds == [.sessionWaitingForFar, .sessionBegan, .missingBeacon, .violation, .lockRequested])
+
+        let status = core.readStatus()
+        #expect(status.sessionState == .unsafe)
+        #expect(status.lastClassification == .missing)
+        #expect(enforcement.requestLockCount == 1)
+    }
+
+    @Test
+    func jsonPersistenceRoundTripsSettingsAndEvents() throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = JSONFaradayPersistence(baseDirectoryURL: tempDirectory)
+        let beacon = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 1, minor: 2)
+        let settings = FaradaySettings(beacon: beacon, nearThresholdRSSI: -65, farThresholdRSSI: -80)
+        let timestamp = Date(timeIntervalSince1970: 30_000)
+
+        store.saveSettings(settings)
+        store.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionBegan))
+
+        #expect(store.loadSettings() == settings)
+        #expect(store.loadEvents() == [FaradayEvent(timestamp: timestamp, kind: .sessionBegan)])
+    }
 }
 
 final class SpyEnforcementAdapter: EnforcementAdapting {
