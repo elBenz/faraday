@@ -3,6 +3,32 @@ import Testing
 
 struct FaradayCoreScaffoldTests {
     @Test
+    func classificationTracerRecordsOnlyTransitions() {
+        let tracer = RSSIClassificationTracer()
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        tracer.record(.uncertain, at: start)
+        tracer.record(.uncertain, at: start.addingTimeInterval(1))
+        tracer.record(.far, at: start.addingTimeInterval(2))
+
+        #expect(tracer.entries.count == 2)
+        #expect(tracer.entries.map(\.classification) == [.uncertain, .far])
+    }
+
+    @Test
+    func classificationTracerRespectsCapacity() {
+        let tracer = RSSIClassificationTracer(maxEntries: 2)
+        let start = Date(timeIntervalSince1970: 2_000)
+
+        tracer.record(.near, at: start)
+        tracer.record(.far, at: start.addingTimeInterval(1))
+        tracer.record(.missing, at: start.addingTimeInterval(2))
+
+        #expect(tracer.entries.count == 2)
+        #expect(tracer.entries.map(\.classification) == [.far, .missing])
+    }
+
+    @Test
     func startRejectsMissingBeacon() {
         var machine = FocusSessionStateMachine()
 

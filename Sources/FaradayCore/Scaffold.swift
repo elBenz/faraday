@@ -17,6 +17,37 @@ public enum ProximityClassification: Equatable {
     case missing
 }
 
+public struct RSSIClassificationTraceEntry: Equatable {
+    public let timestamp: Date
+    public let classification: ProximityClassification
+
+    public init(timestamp: Date, classification: ProximityClassification) {
+        self.timestamp = timestamp
+        self.classification = classification
+    }
+}
+
+public final class RSSIClassificationTracer {
+    public private(set) var entries: [RSSIClassificationTraceEntry] = []
+    private let maxEntries: Int
+
+    public init(maxEntries: Int = 500) {
+        self.maxEntries = max(1, maxEntries)
+    }
+
+    public func record(_ classification: ProximityClassification, at timestamp: Date = Date()) {
+        if entries.last?.classification == classification {
+            return
+        }
+
+        entries.append(RSSIClassificationTraceEntry(timestamp: timestamp, classification: classification))
+
+        if entries.count > maxEntries {
+            entries.removeFirst(entries.count - maxEntries)
+        }
+    }
+}
+
 public enum SessionState: Equatable {
     case idle
     case waitingForFar
