@@ -97,6 +97,60 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func missingAfterFarUsesGraceBeforeLocking() {
+        let enforcement = SpyEnforcementAdapter()
+        let core = FaradayCore(
+            sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
+            enforcement: enforcement
+        )
+        let start = Date(timeIntervalSince1970: 9_000)
+
+        _ = core.startSession(classification: .near)
+        _ = core.handle(classification: .far, at: start)
+
+        let entersGrace = core.handle(classification: .missing, at: start.addingTimeInterval(1))
+        let stillGrace = core.handle(classification: .missing, at: start.addingTimeInterval(5.9))
+        let expiresGrace = core.handle(classification: .missing, at: start.addingTimeInterval(6.1))
+
+        #expect(entersGrace == .none)
+        #expect(stillGrace == .none)
+        #expect(expiresGrace == .requestLock)
+        #expect(core.state == .unsafe)
+        #expect(enforcement.requestLockCount == 1)
+    }
+
+    @Test
+    func missingOutsideStrictSessionDoesNotLock() {
+        let enforcement = SpyEnforcementAdapter()
+        let core = FaradayCore(enforcement: enforcement)
+
+        let command = core.handle(classification: .missing)
+
+        #expect(command == .none)
+        #expect(core.state == .idle)
+        #expect(enforcement.requestLockCount == 0)
+    }
+
+    @Test
+    func missingAfterUncertainLocksImmediately() {
+        let enforcement = SpyEnforcementAdapter()
+        let core = FaradayCore(
+            sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
+            enforcement: enforcement
+        )
+        let start = Date(timeIntervalSince1970: 10_000)
+
+        _ = core.startSession(classification: .near)
+        _ = core.handle(classification: .far, at: start)
+        _ = core.handle(classification: .uncertain, at: start.addingTimeInterval(1))
+        let command = core.handle(classification: .missing, at: start.addingTimeInterval(2))
+
+        #expect(command == .requestLock)
+        #expect(core.state == .unsafe)
+        #expect(enforcement.requestLockCount == 1)
+    }
+
+    @Test
     func allowlistScannerEmitsOnlyMatchingBeaconObservations() {
         let allowlisted = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 100, minor: 7)
         let scanner = BeaconAllowlistScanner(allowlist: [allowlisted])

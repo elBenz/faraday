@@ -132,10 +132,18 @@ public final class NoopEnforcementAdapter: EnforcementAdapting {
 
 public struct FocusSessionStateMachine {
     public private(set) var state: SessionState = .idle
+    private let missingBeaconGracePeriod: TimeInterval
+    private var activeMissingSince: Date?
+    private var lastNonMissingActiveClassification: ProximityClassification?
 
-    public init() {}
+    public init(missingBeaconGracePeriod: TimeInterval = 10) {
+        self.missingBeaconGracePeriod = max(0, missingBeaconGracePeriod)
+    }
 
     public mutating func start(classification: ProximityClassification) -> SessionCommand {
+        activeMissingSince = nil
+        lastNonMissingActiveClassification = nil
+
         switch classification {
         case .missing:
             state = .idle
@@ -151,19 +159,53 @@ public struct FocusSessionStateMachine {
 
     public mutating func stop() -> SessionCommand {
         state = .idle
+        activeMissingSince = nil
+        lastNonMissingActiveClassification = nil
         return .endSession
     }
 
-    public mutating func receive(classification: ProximityClassification) -> SessionCommand {
+    public mutating func receive(classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
         switch (state, classification) {
         case (.waitingForFar, .far):
             state = .active
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .far
             return .beginSession
-        case (.active, .near), (.active, .missing):
+        case (.active, .near):
+            state = .unsafe
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .near
+            return .requestLock
+        case (.active, .uncertain):
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .uncertain
+            return .none
+        case (.active, .far):
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .far
+            return .none
+        case (.active, .missing):
+            let lastClassification = lastNonMissingActiveClassification
+            if lastClassification == .far {
+                if activeMissingSince == nil {
+                    activeMissingSince = timestamp
+                    return .none
+                }
+
+                if let activeMissingSince, timestamp.timeIntervalSince(activeMissingSince) >= missingBeaconGracePeriod {
+                    state = .unsafe
+                    return .requestLock
+                }
+
+                return .none
+            }
+
             state = .unsafe
             return .requestLock
         case (.unsafe, .far):
             state = .active
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .far
             return .none
         default:
             return .none
@@ -194,8 +236,8 @@ public final class FaradayCore {
     }
 
     @discardableResult
-    public func handle(classification: ProximityClassification) -> SessionCommand {
-        let command = sessionStateMachine.receive(classification: classification)
+    public func handle(classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
+        let command = sessionStateMachine.receive(classification: classification, at: timestamp)
         if command == .requestLock {
             enforcement.requestLock()
         }
