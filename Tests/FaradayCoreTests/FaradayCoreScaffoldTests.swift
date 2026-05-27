@@ -387,6 +387,53 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func ibeaconParserExtractsIdentifierAndRejectsInvalidPayloads() {
+        let payload = Data([
+            0x4C, 0x00, 0x02, 0x15,
+            0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x12, 0x34,
+            0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x90, 0xAB,
+            0x00, 0x64, 0x00, 0x07,
+            0xC5
+        ])
+
+        let parsed = IBeaconParser.parse(manufacturerData: payload)
+        #expect(parsed == BeaconIdentifier(
+            uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!,
+            major: 100,
+            minor: 7
+        ))
+
+        #expect(IBeaconParser.parse(manufacturerData: Data([0x4C, 0x00, 0x01])) == nil)
+    }
+
+    @Test
+    func rpcSupportsScanCandidatesAndManualBeaconSelection() throws {
+        let persistence = InMemoryFaradayPersistence()
+        let core = FaradayCore(persistence: persistence)
+        let service = FaradayRPCService(core: core)
+
+        let ingestRequest = """
+        {"jsonrpc":"2.0","id":1,"method":"beacon.scanIngest","params":{"manufacturerDataHex":"4c000215123456781234123412341234567890ab00640007c5","rssi":-67}}
+        """
+        let ingestResponse = try #require(service.handle(requestData: Data(ingestRequest.utf8))).jsonObject()
+        #expect((ingestResponse["result"] as? [String: Any])?["accepted"] as? Bool == true)
+
+        let candidatesResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"beacon.scanCandidates\"}".utf8))).jsonObject()
+        let candidates = try #require((candidatesResponse["result"] as? [String: Any])?["candidates"] as? [[String: Any]])
+        #expect(candidates.count == 1)
+        #expect(candidates.first?["major"] as? Int == 100)
+        #expect(candidates.first?["minor"] as? Int == 7)
+
+        let selectResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"beacon.select\",\"params\":{\"uuid\":\"12345678-1234-1234-1234-1234567890AB\",\"major\":100,\"minor\":7}}".utf8))).jsonObject()
+        #expect((selectResponse["result"] as? [String: Any])?["saved"] as? Bool == true)
+        #expect(persistence.loadSettings()?.beacon == BeaconIdentifier(
+            uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!,
+            major: 100,
+            minor: 7
+        ))
+    }
+
+    @Test
     func rpcReturnsMethodNotFoundAndSupportsEventTailing() throws {
         let persistence = InMemoryFaradayPersistence()
         let core = FaradayCore(persistence: persistence)

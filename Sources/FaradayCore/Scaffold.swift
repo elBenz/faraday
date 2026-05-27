@@ -34,6 +34,71 @@ public struct BeaconAdvertisement: Equatable {
     }
 }
 
+public enum IBeaconParser {
+    public static func parse(manufacturerData: Data) -> BeaconIdentifier? {
+        guard manufacturerData.count >= 25 else { return nil }
+        guard manufacturerData[0] == 0x4C, manufacturerData[1] == 0x00 else { return nil }
+        guard manufacturerData[2] == 0x02, manufacturerData[3] == 0x15 else { return nil }
+
+        let uuidBytes = manufacturerData[4..<20]
+        let major = Int(manufacturerData[20]) << 8 | Int(manufacturerData[21])
+        let minor = Int(manufacturerData[22]) << 8 | Int(manufacturerData[23])
+
+        let hex = uuidBytes.map { String(format: "%02x", $0) }.joined()
+        let formatted = "\(hex.prefix(8))-\(hex.dropFirst(8).prefix(4))-\(hex.dropFirst(12).prefix(4))-\(hex.dropFirst(16).prefix(4))-\(hex.dropFirst(20).prefix(12))"
+
+        guard let uuid = UUID(uuidString: String(formatted)) else { return nil }
+        return BeaconIdentifier(uuid: uuid, major: major, minor: minor)
+    }
+}
+
+public struct BeaconScanCandidate: Equatable {
+    public let identifier: BeaconIdentifier
+    public let lastSeen: Date
+    public let lastRSSI: Int
+    public let seenCount: Int
+
+    public init(identifier: BeaconIdentifier, lastSeen: Date, lastRSSI: Int, seenCount: Int) {
+        self.identifier = identifier
+        self.lastSeen = lastSeen
+        self.lastRSSI = lastRSSI
+        self.seenCount = seenCount
+    }
+}
+
+public final class IBeaconCandidateTracker {
+    private var candidates: [BeaconIdentifier: BeaconScanCandidate] = [:]
+
+    public init() {}
+
+    public func ingest(_ advertisement: BeaconAdvertisement) {
+        if let existing = candidates[advertisement.identifier] {
+            candidates[advertisement.identifier] = BeaconScanCandidate(
+                identifier: advertisement.identifier,
+                lastSeen: advertisement.timestamp,
+                lastRSSI: advertisement.rssi,
+                seenCount: existing.seenCount + 1
+            )
+        } else {
+            candidates[advertisement.identifier] = BeaconScanCandidate(
+                identifier: advertisement.identifier,
+                lastSeen: advertisement.timestamp,
+                lastRSSI: advertisement.rssi,
+                seenCount: 1
+            )
+        }
+    }
+
+    public func list() -> [BeaconScanCandidate] {
+        candidates.values.sorted { lhs, rhs in
+            if lhs.lastSeen == rhs.lastSeen {
+                return lhs.identifier.uuid.uuidString < rhs.identifier.uuid.uuidString
+            }
+            return lhs.lastSeen > rhs.lastSeen
+        }
+    }
+}
+
 public final class BeaconAllowlistScanner {
     private let allowlist: Set<BeaconIdentifier>
     public private(set) var isScanning = false
@@ -642,6 +707,7 @@ public final class FaradayCore {
     private var emergencyModeState: EmergencyModeState = .idle
     private var requiresAcceptableAfterEmergency = false
     private var enforcementMode: EnforcementMode
+    private let candidateTracker = IBeaconCandidateTracker()
 
     public init(
         sessionStateMachine: FocusSessionStateMachine = FocusSessionStateMachine(),
@@ -759,6 +825,31 @@ public final class FaradayCore {
 
     public func readEvents() -> [FaradayEvent] {
         persistence.loadEvents()
+    }
+
+    @discardableResult
+    public func ingestIBeaconScan(manufacturerData: Data, rssi: Int, at timestamp: Date = Date()) -> Bool {
+        guard let identifier = IBeaconParser.parse(manufacturerData: manufacturerData) else {
+            return false
+        }
+
+        candidateTracker.ingest(BeaconAdvertisement(identifier: identifier, timestamp: timestamp, rssi: rssi))
+        return true
+    }
+
+    public func listBeaconCandidates() -> [BeaconScanCandidate] {
+        candidateTracker.list()
+    }
+
+    public func selectBeaconIdentity(_ identifier: BeaconIdentifier) {
+        let current = persistence.loadSettings()
+        persistence.saveSettings(
+            FaradaySettings(
+                beacon: identifier,
+                forbiddenThresholdRSSI: current?.forbiddenThresholdRSSI ?? -65,
+                acceptableThresholdRSSI: current?.acceptableThresholdRSSI ?? -80
+            )
+        )
     }
 
     @discardableResult
@@ -915,6 +1006,40 @@ public final class FaradayRPCService {
             }
             return response(id: id, result: ["events": tail, "nextIndex": events.count - 1])
 
+        case "beacon.scanIngest":
+            guard let hex = params["manufacturerDataHex"] as? String,
+                  let data = Data(hexString: hex),
+                  let rssi = params["rssi"] as? Int else {
+                return response(id: id, error: ["code": -32602, "message": "Invalid params: manufacturerDataHex and rssi are required"])
+            }
+            let accepted = core.ingestIBeaconScan(manufacturerData: data, rssi: rssi)
+            return response(id: id, result: ["accepted": accepted])
+
+        case "beacon.scanCandidates":
+            let candidates = core.listBeaconCandidates().map { candidate in
+                [
+                    "uuid": candidate.identifier.uuid.uuidString.lowercased(),
+                    "major": candidate.identifier.major,
+                    "minor": candidate.identifier.minor,
+                    "lastSeen": iso8601.string(from: candidate.lastSeen),
+                    "lastRSSI": candidate.lastRSSI,
+                    "seenCount": candidate.seenCount
+                ]
+            }
+            return response(id: id, result: ["candidates": candidates])
+
+        case "beacon.select":
+            guard
+                let uuidRaw = params["uuid"] as? String,
+                let uuid = UUID(uuidString: uuidRaw),
+                let major = params["major"] as? Int,
+                let minor = params["minor"] as? Int
+            else {
+                return response(id: id, error: ["code": -32602, "message": "Invalid params: uuid, major, and minor are required"])
+            }
+            core.selectBeaconIdentity(BeaconIdentifier(uuid: uuid, major: major, minor: minor))
+            return response(id: id, result: ["saved": true])
+
         default:
             return response(id: id, error: ["code": -32601, "message": "Method not found"])
         }
@@ -998,6 +1123,24 @@ private extension FaradayEventKind {
         case .emergencyRefused: return "emergencyRefused"
         case .emergencyExpired: return "emergencyExpired"
         }
+    }
+}
+
+private extension Data {
+    init?(hexString: String) {
+        let cleaned = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleaned.count % 2 == 0 else { return nil }
+
+        var data = Data(capacity: cleaned.count / 2)
+        var index = cleaned.startIndex
+        while index < cleaned.endIndex {
+            let next = cleaned.index(index, offsetBy: 2)
+            let byteString = cleaned[index..<next]
+            guard let byte = UInt8(byteString, radix: 16) else { return nil }
+            data.append(byte)
+            index = next
+        }
+        self = data
     }
 }
 
