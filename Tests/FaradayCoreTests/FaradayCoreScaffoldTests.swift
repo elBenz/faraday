@@ -66,7 +66,7 @@ struct FaradayCoreScaffoldTests {
     func activeSessionRequestsLockWhenBeaconReturnsForbidden() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
-        core.setEnforcementMode(.armed)
+        armForTests(core)
 
         _ = core.startSession(classification: .forbidden)
         _ = core.handle(classification: .acceptable)
@@ -100,7 +100,7 @@ struct FaradayCoreScaffoldTests {
     func unsafeProximityLocksOnceUntilAcceptableConfirmedAgain() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
-        core.setEnforcementMode(.armed)
+        armForTests(core)
 
         _ = core.startSession(classification: .forbidden)
         _ = core.handle(classification: .acceptable)
@@ -125,7 +125,7 @@ struct FaradayCoreScaffoldTests {
             sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
             enforcement: enforcement
         )
-        core.setEnforcementMode(.armed)
+        armForTests(core)
         let start = Date(timeIntervalSince1970: 9_000)
 
         _ = core.startSession(classification: .forbidden)
@@ -161,7 +161,7 @@ struct FaradayCoreScaffoldTests {
             sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
             enforcement: enforcement
         )
-        core.setEnforcementMode(.armed)
+        armForTests(core)
         let start = Date(timeIntervalSince1970: 10_000)
 
         _ = core.startSession(classification: .forbidden)
@@ -226,14 +226,34 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
-    func daemonStatusExposesAndPersistsEnforcementMode() {
+    func armedModeRequiresBeaconAndGoodCalibration() {
         let persistence = InMemoryFaradayPersistence()
         let core = FaradayCore(persistence: persistence)
 
         #expect(core.readStatus().enforcementMode == .dryRun)
 
         core.setEnforcementMode(.armed)
+        #expect(core.readStatus().enforcementMode == .dryRun)
 
+        core.saveSettings(FaradaySettings(
+            beacon: BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 1, minor: 2),
+            forbiddenThresholdRSSI: -65,
+            acceptableThresholdRSSI: -80
+        ))
+        core.saveCalibration(FaradayCalibration(
+            deskRSSI: [-66, -67, -65, -68],
+            doorwayRSSI: [-72, -73, -71, -74],
+            targetRoomRSSI: []
+        ))
+        core.setEnforcementMode(.armed)
+        #expect(core.readStatus().enforcementMode == .dryRun)
+
+        core.saveCalibration(FaradayCalibration(
+            deskRSSI: [-56, -57, -55, -58],
+            doorwayRSSI: [-84, -85, -83, -86],
+            targetRoomRSSI: []
+        ))
+        core.setEnforcementMode(.armed)
         #expect(core.readStatus().enforcementMode == .armed)
         #expect(persistence.loadStatus()?.enforcementMode == .armed)
     }
@@ -247,7 +267,7 @@ struct FaradayCoreScaffoldTests {
             enforcement: enforcement,
             persistence: persistence
         )
-        core.setEnforcementMode(.armed)
+        armForTests(core)
         let beacon = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 10, minor: 11)
         let settings = FaradaySettings(beacon: beacon, forbiddenThresholdRSSI: -70, acceptableThresholdRSSI: -82)
         let t0 = Date(timeIntervalSince1970: 20_000)
@@ -302,7 +322,7 @@ struct FaradayCoreScaffoldTests {
     func emergencyCoworkModeDelayExtensionAndRecovery() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
-        core.setEnforcementMode(.armed)
+        armForTests(core)
         let start = Date(timeIntervalSince1970: 40_000)
 
         _ = core.startSession(classification: .forbidden, at: start)
@@ -611,6 +631,20 @@ final class SpyOverlayAdapter: OverlayAdapting {
     func hide() {
         events.append(.hide)
     }
+}
+
+private func armForTests(_ core: FaradayCore) {
+    core.saveSettings(FaradaySettings(
+        beacon: BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 1, minor: 2),
+        forbiddenThresholdRSSI: -65,
+        acceptableThresholdRSSI: -80
+    ))
+    core.saveCalibration(FaradayCalibration(
+        deskRSSI: [-56, -57, -55, -58],
+        doorwayRSSI: [-84, -85, -83, -86],
+        targetRoomRSSI: []
+    ))
+    core.setEnforcementMode(.armed)
 }
 
 private extension Data {

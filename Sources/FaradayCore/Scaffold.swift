@@ -898,7 +898,12 @@ public final class FaradayCore {
     }
 
     public func setEnforcementMode(_ mode: EnforcementMode) {
-        enforcementMode = mode
+        switch mode {
+        case .dryRun:
+            enforcementMode = .dryRun
+        case .armed:
+            enforcementMode = isArmedModeEligible() ? .armed : .dryRun
+        }
         persistStatus()
     }
 
@@ -1060,6 +1065,28 @@ public final class FaradayCore {
         case .idle:
             break
         }
+    }
+
+    private func isArmedModeEligible() -> Bool {
+        guard let settings = persistence.loadSettings(), settings.beacon != nil else {
+            return false
+        }
+
+        let calibration = persistence.loadCalibration() ?? FaradayCalibration()
+        guard !calibration.deskRSSI.isEmpty else {
+            return false
+        }
+
+        let acceptableSamples = calibration.doorwayRSSI + calibration.targetRoomRSSI
+        guard !acceptableSamples.isEmpty else {
+            return false
+        }
+
+        let confidence = CalibratedProximityClassifier.evaluateConfidence(
+            forbiddenRSSISamples: calibration.deskRSSI,
+            acceptableRSSISamples: acceptableSamples
+        )
+        return CalibratedProximityClassifier.isArmedEnforcementEligible(confidence: confidence)
     }
 
     private func persistStatus() {
