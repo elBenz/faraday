@@ -410,6 +410,9 @@ struct FaradayCoreScaffoldTests {
         let result = try #require(payload["result"] as? [String: Any])
         #expect(result["sessionState"] as? String == "idle")
         #expect(result["enforcementMode"] as? String == "dryRun")
+        #expect(result.keys.contains("calibrationConfidence"))
+        #expect(result.keys.contains("overlayState"))
+        #expect(result.keys.contains("countdownSeconds"))
     }
 
     @Test

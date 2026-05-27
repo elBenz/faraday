@@ -33,6 +33,15 @@ Planning and early scaffold phase. Primary docs:
 - Mock enforcement in automated tests so tests never lock a developer Mac.
 - Keep BLE scanning, RSSI classification, session state, enforcement, calibration, persistence, and launchd integration separate.
 
+## Local dashboard (Bun TUI)
+
+Run the daemon first, then start the dashboard:
+
+- `swift run FaradayDaemon`
+- `npm run tui`
+
+The TUI connects over `~/.faraday/faraday.sock`, shows live status/event tail, and supports `start`, `stop`, `mode`, `inject`, and `replay` commands.
+
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE).

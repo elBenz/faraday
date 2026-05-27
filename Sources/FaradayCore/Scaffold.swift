@@ -1082,7 +1082,9 @@ public final class FaradayRPCService {
                 "lastClassification": status.lastClassification?.rpcName as Any,
                 "enforcementMode": status.enforcementMode.rpcName,
                 "observationSource": status.observationSource.rpcName,
-                "overlayState": status.overlayState.rpcName
+                "calibrationConfidence": NSNull(),
+                "overlayState": status.overlayState.rpcName,
+                "countdownSeconds": NSNull()
             ])
 
         case "session.start":
