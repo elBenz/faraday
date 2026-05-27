@@ -1,207 +1,186 @@
-# PRD: Faraday
+# PRD: Faraday Working MVP
 
 ## Problem Statement
 
-The user works on a Mac but repeatedly gets derailed by using their iPhone while trying to focus. Existing focus tools are too easy to bypass because they rely on intention, app limits, or friction inside the phone. The needed outcome is physical discipline: during a focus session, the iPhone must be physically far away from the desk, or the Mac should become unusable until the phone is moved away again.
+The user wants to do strict focus work on a Mac without repeatedly picking up their iPhone. Existing focus tools are easy to bypass because they depend on intention, app limits, or phone-side friction. Faraday should create physical discipline: during a strict session, the phone-attached beacon must be in an acceptable phone location, not in the forbidden phone area near the desk.
 
-A Mac-only solution that polls the iPhone directly is not technically reliable without an iOS companion app, because locked iPhones do not provide a stable, queryable proximity signal to arbitrary macOS software. The product therefore uses a small BLE beacon physically attached to the iPhone/case as the proximity signal. The Mac scans the beacon, estimates proximity from RSSI, and enforces focus-session rules locally.
+The previous v0 work produced useful core concepts and documentation, but not a working end-to-end product. The next phase must turn Faraday into a working or almost-working MVP: a real daemon, real beacon sensing when hardware is available, real calibrated proximity classification, a prominent native overlay, native macOS lock enforcement in armed mode, and a polished Bun terminal UI for setup and control.
+
+The user does not yet have the beacon hardware. Until the parcel arrives, Faraday needs a simulated observation source that drives the same daemon, TUI, persistence, overlay, and enforcement paths as the real BLE source. Simulation is useful for development, but it is not valid final Working MVP evidence.
 
 ## Solution
 
-Build a native macOS focus daemon/app that enforces a strict focus session using a BLE iBeacon attached to the iPhone.
+Build Faraday as a local-first macOS enforcement system made of three cooperating processes:
 
-Before a strict session starts, the app confirms the beacon is alive and near the Mac. The user then physically moves the phone/beacon to another room. Once the beacon RSSI remains weak long enough, the session becomes active and the Mac remains usable.
+- A Swift daemon that owns sensing, classification, session state, persistence, overlay launching, session notifications, and native lock enforcement.
+- A Swift native overlay helper that appears prominently across displays during violations or beacon-trust failures.
+- A Bun terminal UI that provides setup, simulation, calibration, session control, status, and event inspection through the daemon's local Unix domain socket JSON-RPC API.
 
-During the active session, the daemon continuously scans for the beacon:
+Faraday will use user-calibrated meaning rather than generic distance language. The user calibrates a forbidden phone area, usually the desk or within easy reach, and one or more acceptable phone locations where the phone may live during focus. One acceptable location is enough to start; three distinct acceptable locations are recommended for better confidence. The classifier reports `forbidden`, `acceptable`, `uncertain`, or `missing`.
 
-- If the beacon becomes near for a sustained period, the app shows a countdown overlay asking the user to move the phone away.
-- If the phone remains near after the countdown, the daemon locks the macOS user session.
-- If the beacon disappears briefly after previously being far, the app warns but allows a grace window.
-- If the beacon stays missing too long during a strict session, the daemon treats the state as unsafe and locks the Mac.
-- If the user has a real urgent need to use phone + Mac together, they can enter a short, logged Emergency Co-work Mode with limited duration and extension count.
+Dry-run enforcement is the default. It records lock requests and shows warnings without locking macOS. Armed enforcement must be explicitly enabled and is only allowed after beacon identity, calibration, and confidence requirements are satisfied. In armed mode, sustained forbidden proximity during an active strict session triggers a native Faraday-themed overlay countdown and then locks macOS using a native lock adapter.
 
-The MVP targets personal macOS use first. It prioritizes behavioral effectiveness and robust local enforcement over dashboard polish, cloud features, or perfect anti-tamper security.
-
-The software should be released as an Apache-2.0 open-source app. Bring-your-own compatible iBeacons are a first-class setup path. Productization and possible future beacon kits are tracked separately in `docs/PRODUCT.md`; they must not make hardware purchase or paid software features required for core enforcement. Beacon compatibility guidance lives in `docs/BEACONS.md`.
+If the configured beacon becomes missing long enough that Faraday cannot trust proximity, Faraday does not lock from missing alone. It marks the session degraded/invalid, warns clearly, and requires revalidation: the beacon must be seen again in the forbidden phone area, then moved back to an acceptable phone location before strict enforcement resumes.
 
 ## User Stories
 
-1. As a distracted Mac user, I want my Mac to require my phone to be physically away from my desk, so that I cannot keep checking my phone while working.
-2. As a distracted Mac user, I want the system to use a hardware beacon attached to my phone, so that the Mac can detect phone proximity without needing an iOS app.
-3. As a distracted Mac user, I want to start a strict focus session manually, so that enforcement only applies when I intentionally begin deep work.
-4. As a distracted Mac user, I want the app to confirm the beacon is near before session setup starts, so that I know the beacon is alive and attached.
-5. As a distracted Mac user, I want the app to tell me to move my phone away before the session begins, so that the required behavior is clear.
-6. As a distracted Mac user, I want the session to become active only after my phone stays far away long enough, so that transient Bluetooth noise does not falsely approve the session.
-7. As a distracted Mac user, I want the app to lock my Mac if my phone comes back near the desk, so that grabbing my phone breaks the work loop immediately.
-8. As a distracted Mac user, I want a visible warning countdown before lock, so that accidental proximity can be corrected without a surprise lock.
-9. As a distracted Mac user, I want the Mac to re-check phone proximity after unlock, so that unlocking the Mac does not bypass the session.
-10. As a distracted Mac user, I want the Mac to relock if my phone is still near after I unlock, so that enforcement continues after the system lock screen.
-11. As a distracted Mac user, I want the app to warn me when the beacon disappears, so that I know the sensor state is suspicious or unreliable.
-12. As a distracted Mac user, I want a short missing-beacon grace period after the phone was confirmed far, so that Bluetooth drops do not instantly lock me out.
-13. As a distracted Mac user, I want missing beacon at session startup to prevent session start, so that I cannot start a strict session while the beacon is absent.
-14. As a distracted Mac user, I want missing beacon after being near to trigger unsafe behavior, so that removing or killing the beacon is not an easy bypass.
-15. As a distracted Mac user, I want defaults that work without calibration, so that I can try the system quickly.
-16. As a distracted Mac user, I want optional guided calibration, so that the app can adapt to my Mac, beacon, room layout, and desk.
-17. As a distracted Mac user, I want calibration to measure desk, doorway, and target room RSSI, so that near/far thresholds are based on real environment data.
-18. As a distracted Mac user, I want the app to show current classification, so that I understand whether the phone is near, far, uncertain, or missing.
-19. As a distracted Mac user, I want the app to avoid aggressive lock/unlock flapping, so that Bluetooth noise does not ruin work.
-20. As a distracted Mac user, I want hysteresis and sustained-time rules, so that the app reacts to real proximity changes rather than single RSSI spikes.
-21. As a distracted Mac user, I want emergency access when I genuinely need phone and Mac together, so that the tool does not block real life.
-22. As a distracted Mac user, I want Emergency Co-work Mode to be short and logged, so that it helps emergencies without becoming a normal bypass.
-23. As a distracted Mac user, I want one limited emergency extension, so that real urgent tasks can finish without opening unlimited loopholes.
-24. As a distracted Mac user, I want emergency mode to end by requiring the phone to be far again, so that normal enforcement resumes cleanly.
-25. As a distracted Mac user, I want local logs of sessions, violations, missing-beacon events, locks, and emergencies, so that I can inspect whether the tool is working.
-26. As a distracted Mac user, I want the daemon to run automatically after login/reboot, so that enforcement is not forgotten.
-27. As a distracted Mac user, I want the daemon to restart if it crashes, so that enforcement remains active during sessions.
-28. As a distracted Mac user, I want the daemon to be harder to kill casually, so that weak-moment bypass requires meaningful effort.
-29. As a distracted Mac user, I want the MVP to work without cloud accounts, subscriptions, or an iOS app, so that it is cheap and private to build and use.
-30. As a distracted Mac user, I want the beacon to be a common configurable iBeacon, so that the prototype can use off-the-shelf hardware.
-31. As a distracted Mac user, I want bring-your-own compatible beacons to be a first-class setup path, so that I can use Faraday without buying hardware from Faraday.
-32. As a distracted Mac user, I want a compatibility list for tested beacons, so that I can choose hardware with confidence.
-33. As a distracted Mac user, I want the app to support beacon identifier allowlisting, so that nearby unrelated BLE devices do not affect enforcement.
-34. As a distracted Mac user, I want the app to expose enough status for a future dashboard, so that focus stats can be added later without changing enforcement logic.
-35. As a future contributor, I want the full app to be open source under Apache-2.0, so that the enforcement behavior is inspectable and reusable.
-36. As a future contributor, I want enforcement logic separated from BLE scanning, so that the state machine can be tested without Bluetooth hardware.
-37. As a future contributor, I want the lock mechanism abstracted behind an interface, so that tests can verify lock decisions without locking the developer's Mac.
-38. As a future contributor, I want calibration data modeled separately from live RSSI observations, so that threshold logic remains simple and testable.
-39. As a future contributor, I want launchd integration documented, so that the daemon can be installed, restarted, and removed predictably.
-40. As a future user, I want clear language that this is B-level anti-bypass, not impossible security, so that expectations are honest.
+1. As a distracted Mac user, I want Faraday to keep my phone out of the forbidden phone area, so that I cannot casually check it during focus work.
+2. As a distracted Mac user, I want Faraday to use a phone-attached beacon, so that macOS can infer phone proximity without an iOS app.
+3. As a distracted Mac user, I want to define my forbidden phone area, so that Faraday enforces my actual weak spot rather than a generic distance.
+4. As a distracted Mac user, I want to define acceptable phone locations, so that the phone can live wherever works for my room.
+5. As a distracted Mac user, I want acceptable locations to include another room, a hallway, a drawer, a shelf, or a farther-away same-room spot, so that Faraday fits my real environment.
+6. As a distracted Mac user, I want calibration to warn me when acceptable locations are too similar to the forbidden phone area, so that I do not trust unreliable enforcement.
+7. As a distracted Mac user, I want one acceptable location to be enough for basic calibration, so that setup is not too heavy.
+8. As a distracted Mac user, I want Faraday to recommend three acceptable locations, so that classification has better confidence.
+9. As a distracted Mac user, I want Faraday to block armed enforcement when calibration confidence is weak, so that it does not lock my Mac from bad thresholds.
+10. As a distracted Mac user, I want dry-run mode by default, so that I can test behavior without risking unexpected locks.
+11. As a distracted Mac user, I want armed mode to be explicit and obvious, so that I always know when Faraday can lock my Mac.
+12. As a distracted Mac user, I want Faraday to require configured beacon identity before arming, so that unrelated BLE devices do not control enforcement.
+13. As a distracted Mac user, I want Faraday to require calibration before arming, so that native lock behavior is based on my own setup.
+14. As a distracted Mac user, I want to start a strict session from the TUI, so that I can begin enforcement quickly from the terminal.
+15. As a distracted Mac user, I want Faraday to confirm the beacon starts in the forbidden phone area, so that it knows the beacon is alive and attached before the session begins.
+16. As a distracted Mac user, I want Faraday to wait until the beacon reaches acceptable proximity before the strict session becomes active, so that I physically move the phone away before work starts.
+17. As a distracted Mac user, I want Faraday to show current classification, so that I understand whether the phone is forbidden, acceptable, uncertain, or missing.
+18. As a distracted Mac user, I want uncertain proximity to warn but not lock, so that ambiguous BLE readings do not cause false locks.
+19. As a distracted Mac user, I want uncertain proximity to not count as acceptable recovery, so that Faraday does not resume strict claims too early.
+20. As a distracted Mac user, I want a prominent native overlay when the phone is in the forbidden phone area, so that I notice even when I am not watching the terminal.
+21. As a distracted Mac user, I want the overlay to use a Faraday electrical/electromagnetic theme, so that the product feels cohesive and motivating.
+22. As a distracted Mac user, I want violation copy to be clear but lightly themed, so that it feels serious without being annoying or embarrassing.
+23. As a distracted Mac user, I want the first violation countdown to last about 30 seconds, so that accidental proximity can be corrected.
+24. As a distracted Mac user, I want Faraday to lock macOS if the phone remains in the forbidden phone area after the countdown, so that the weak-moment loop is interrupted.
+25. As a distracted Mac user, I want a shorter 10–15 second countdown after unlock if the phone is still forbidden, so that relocking is clean but not silent.
+26. As a distracted Mac user, I want Faraday to detect unlock/session-active events cleanly, so that post-unlock checks are reliable.
+27. As a distracted Mac user, I want Faraday to never lock from a missing beacon alone, so that BLE dropouts do not punish me with false locks.
+28. As a distracted Mac user, I want missing beacon during an active session to mark the session degraded/invalid, so that Faraday is honest when it cannot trust the sensor.
+29. As a distracted Mac user, I want missing-beacon recovery to require revalidating the beacon in the forbidden phone area and then moving it back to acceptable proximity, so that Faraday regains chain of trust.
+30. As a distracted Mac user, I want local event logs, so that I can inspect session starts, classification changes, warnings, lock requests, dry-run skips, native lock attempts, missing-beacon degradation, and calibration results.
+31. As a distracted Mac user, I want a TUI dashboard, so that I can see daemon status, current source, enforcement mode, classification, session state, overlay state, and recent events.
+32. As a distracted Mac user, I want simulation controls in the TUI before my beacon arrives, so that I can validate the end-to-end flow early.
+33. As a distracted Mac user, I want simulation to use the same daemon path as real BLE, so that simulated success exercises real architecture.
+34. As a distracted Mac user, I want Faraday to support real iBeacon scan-and-select setup, so that I do not mistype UUID, major, or minor values.
+35. As a distracted Mac user, I want manual beacon identity entry as a fallback, so that setup still works if I already know the beacon identifiers.
+36. As a distracted Mac user, I want a live RSSI display during setup and calibration, so that I can see signal behavior while placing the beacon.
+37. As a distracted Mac user, I want calibration sampling to show progress, median, variance/noise, and a sparkline, so that I trust the measurements.
+38. As a distracted Mac user, I want to redo a calibration sample, so that accidental movement or noise does not poison thresholds.
+39. As a distracted Mac user, I want to add more acceptable locations later, so that Faraday improves as I learn my environment.
+40. As a distracted Mac user, I want the TUI to quit without stopping enforcement, so that strict sessions continue after closing the terminal.
+41. As a distracted Mac user, I want the daemon to run manually during development, so that debugging is simple before launchd integration.
+42. As a distracted Mac user, I want a user LaunchAgent later in the phase, so that Faraday can keep running and restart after crashes.
+43. As a future contributor, I want the daemon API to be local and inspectable, so that TUI, tests, and future UI clients can control Faraday safely.
+44. As a future contributor, I want enforcement to be isolated from terminal UI code, so that UI bugs do not disable enforcement.
+45. As a future contributor, I want native macOS operations behind adapters, so that tests can verify behavior without locking the developer's Mac.
+46. As a future contributor, I want simulation and BLE observation sources to share the same classifier/session path, so that tests cover real behavior.
+47. As a future contributor, I want JSON/JSONL persistence, so that state and events are easy to inspect during MVP iteration.
+48. As a future contributor, I want old `near`/`far` naming replaced with `forbidden`/`acceptable`, so that code matches the domain model.
+49. As a future contributor, I want root LaunchDaemon serious mode deferred, so that the working MVP does not get blocked by GUI-session complexity.
+50. As a future user, I want Faraday to be honest that it is behavioral weak-moment resistance, not adversarial endpoint security, so that expectations are clear.
 
 ## Implementation Decisions
 
-- Build the core as a native Swift macOS daemon/app for robustness.
-- Use CoreBluetooth for BLE scanning.
-- Release the full macOS app/daemon as Apache-2.0 open source.
-- Target configurable iBeacon hardware for the first prototype.
-- Treat bring-your-own compatible beacons as a first-class setup path.
-- Maintain `docs/BEACONS.md` as the compatibility list before any hardware sales.
-- Identify the phone-attached beacon by UUID plus major/minor, not by Bluetooth device name.
-- Treat the iPhone itself as out of scope for sensing. The beacon attached to the iPhone/case is the sensed object.
-- Do not build an iOS app for MVP.
-- Do not rely on paired iPhone Bluetooth RSSI, iPhone MAC address, Wi-Fi ping, local IP reachability, Bonjour, or AirTag ecosystem behavior.
-- Use a strict session state machine as the enforcement core.
-- Session start flow:
-  - User clicks Start Focus.
-  - Daemon confirms beacon is currently near and alive.
-  - UI instructs user to move phone to another room.
-  - Daemon waits until the beacon is classified far for a sustained period.
-  - Session becomes active only after far confirmation.
-- Initial classification defaults:
-  - Near: smoothed RSSI stronger than about `-65 dBm` for 30 seconds.
-  - Far: smoothed RSSI weaker than about `-78 dBm` for 90 seconds.
-  - Missing: no matching beacon advertisements for 10 seconds.
-  - Uncertain: between near and far thresholds.
-- Defaults must be configurable and replaced by calibration values when available.
-- Use exponential moving average smoothing over RSSI observations.
-- Use hysteresis: near and far thresholds differ, and far clearance requires longer sustained evidence than near violation.
-- Near violations should trigger faster than far approvals.
-- Missing beacon policy during strict session:
-  - Missing immediately after near or unknown state is unsafe.
-  - Missing after far-confirmed state enters warning/grace.
-  - Missing beyond configured grace becomes unsafe and triggers lock behavior.
-- Missing beacon outside strict session produces warning/status only.
-- Use overlay countdown before native lock.
-- Enforcement sequence:
-  - Detect unsafe state.
-  - Show overlay/countdown for about 30 seconds.
-  - Continue scanning during countdown.
-  - Cancel countdown if phone becomes far-confirmed again.
-  - If unsafe persists, lock the macOS user session.
-  - After unlock, immediately re-evaluate state and relock if still unsafe.
-- Prefer native session lock over overlay-only enforcement.
-- Overlay is a warning and UX layer, not the security boundary.
-- Use launchd for automatic startup and KeepAlive in MVP.
-- Serious personal-use mode should install as a root-owned LaunchDaemon requiring admin action to unload.
-- Record launchd posture/tradeoffs in ADRs (see `docs/adr/0001-launchd-weak-moment-resistance-posture.md`).
-- Accept that perfect enforcement is impossible when the user is local admin.
-- Design target is weak-moment resistance, not adversarial security.
-- Emergency Co-work Mode:
-  - User selects reason.
-  - User waits 30–60 seconds.
-  - App grants 10 minutes of phone + Mac coexistence.
-  - One 10-minute extension allowed.
-  - Emergency events are logged.
-  - After expiration, the phone must become far again before the session can continue.
-- Calibration UX:
-  - Defaults available if user skips calibration.
-  - Optional guided calibration measures phone on desk, phone at doorway/hall, and phone in target room.
-  - Calibration produces near/far thresholds and confidence notes.
-- Deep modules to build:
-  - Beacon scanner: converts CoreBluetooth observations into timestamped RSSI samples for the configured beacon.
-  - RSSI classifier: converts samples into near/far/uncertain/missing using smoothing, hysteresis, and timers.
-  - Session state machine: converts classifications and user actions into session states and enforcement commands.
-  - Enforcement adapter: executes overlay and native lock commands behind a testable interface.
-  - Calibration engine: records guided RSSI samples and derives thresholds.
-  - Persistence/logging module: stores settings, calibration, session events, emergency events, and violations.
-  - Launchd installer/config module: installs and manages daemon startup behavior.
-  - Status API: exposes current daemon state to local UI or future dashboard.
+- Archive the old v0 PRD and use this PRD as the next-phase source of truth.
+- Rename domain language in code, tests, API, and UI from `near`/`far` to `forbidden`/`acceptable`.
+- Keep the classification set small and stable: `forbidden`, `acceptable`, `uncertain`, and `missing`.
+- Use session states that reflect product behavior: `idle`, `setupRequired`, `calibrationRequired`, `waitingForAcceptable`, `active`, `violationWarning`, `lockedAfterViolation`, `degradedBeaconTrust`, and `stopped`.
+- Build a Swift daemon as the authority for sensing, classification, session state, persistence, event logging, overlay launching, session notifications, dry-run/armed enforcement, and native lock requests.
+- Build a Swift native overlay helper as a separate process. The overlay has no enforcement authority; if it crashes, the daemon still owns countdown and lock decisions.
+- Build a Bun TUI as the primary control surface. The TUI sends commands and displays state/events only; it never directly locks macOS and never owns session internals.
+- Use a local Unix domain socket JSON-RPC API between TUI and daemon.
+- Provide command families for status, session control, simulation, calibration, events, overlay testing, and dev-only shutdown.
+- Include status fields for daemon uptime, active observation source, scanner status, enforcement mode, session state, proximity classification, calibration confidence, overlay/countdown state, last beacon seen, and recent events.
+- Use JSON files for settings, calibration, and status; use JSONL for append-only events.
+- Write settings, calibration, and status atomically; append events line-by-line.
+- Support multiple observation sources running for visibility, but select exactly one authoritative source for classification at a time.
+- Implement a simulated observation source first because hardware has not arrived. It must feed the same daemon path as real BLE.
+- Implement simulation controls for direct classification injection and replayed scenarios.
+- Implement real BLE as iBeacon-only scanning through CoreBluetooth. Do not claim generic BLE device support.
+- Identify beacons by UUID, major, and minor. Device names are not authoritative.
+- Provide scan-and-select setup for nearby iBeacon candidates, with manual identity entry fallback.
+- Calibration model compares a forbidden phone area against an acceptable phone location set.
+- Calibration requires at least one acceptable location; recommend three distinct acceptable locations for better confidence.
+- Calibration sampling defaults to about 20 seconds per sample and should expose sample count, median, variance/noise, and live RSSI sparkline.
+- Calibration confidence uses simple band separation: compare forbidden RSSI band and acceptable RSSI band, with median separation and overlap checks.
+- Initial confidence thresholds: good at roughly 15 dB or more separation with low overlap, weak at roughly 8–14 dB, unusable below roughly 8 dB or heavy overlap.
+- Armed enforcement is blocked unless beacon identity is configured, forbidden area is calibrated, at least one acceptable location is calibrated, and confidence is good.
+- Dry-run enforcement is default. It records lock requests and shows warnings without locking macOS.
+- Armed enforcement is explicit and visually obvious in both TUI and overlay.
+- Use conservative classification: only classify forbidden when signal strongly matches the forbidden band for the sustain period; only classify acceptable when signal strongly matches acceptable band for the sustain period; otherwise classify uncertain.
+- Uncertain proximity warns but does not lock and does not count as acceptable recovery.
+- Initial timing defaults: forbidden sustain about 5 seconds, acceptable sustain about 15 seconds, missing timeout about 10 seconds, first violation countdown about 30 seconds, repeat/post-unlock countdown about 10–15 seconds.
+- Missing beacon does not lock from missing alone. It creates a beacon-trust failure and marks the strict session degraded/invalid.
+- Beacon-trust recovery requires seeing the beacon in the forbidden phone area again, then seeing acceptable proximity again before strict enforcement resumes.
+- Native overlay should be large, always-on-top, and present across displays where feasible. It should dim the background, show countdown, classification, enforcement mode, and a clear instruction to move the phone to an acceptable location.
+- Use a Faraday visual theme: near-black/graphite base, cyan/teal acceptable state, amber/red forbidden violation, violet/magenta degraded/missing warning, blue dry-run badge, red armed badge, field lines, electrical pulses, signal rings, and instrument-like telemetry.
+- Use lightly themed violation copy, e.g. “Containment breach: phone detected in forbidden area. Move it to an acceptable location.”
+- Native lock implementation starts with a `CGSession -suspend` adapter. The adapter logs attempts and failures and is replaceable later.
+- Tests must use mock enforcement adapters so automated tests never lock the developer's Mac.
+- Use macOS session/unlock notifications for clean post-unlock behavior in the user LaunchAgent context.
+- On unlock/session-active after a violation lock, immediately evaluate current classification. Forbidden starts the repeat countdown; acceptable clears the violation; missing enters degraded trust; uncertain warns without locking.
+- Defer root-owned LaunchDaemon serious mode. Next phase uses a user LaunchAgent only, because GUI overlay and session notifications are simpler and more reliable there.
+- Defer Emergency Co-work Mode until after the core enforcement loop works.
+- Launchd installation comes after the manual daemon/TUI/overlay loop works.
+- Keep the full software local-first: no cloud account, no telemetry, no iOS app, no paid software features.
 
 ## Testing Decisions
 
 - Test external behavior, not implementation details.
-- Do not require BLE hardware for most automated tests.
-- The RSSI classifier should be tested with synthetic timestamped observations.
-- The session state machine should be tested with classification events and user actions.
-- The enforcement adapter should be mocked in tests so test runs never lock the real Mac.
-- Calibration should be tested with representative sample sets for desk, doorway, and target room.
-- Logging should be tested by verifying emitted event records for major transitions.
-- Launchd installation should have smoke/manual tests first; full automated tests may be deferred.
-- CoreBluetooth scanner should have manual/integration tests with a real configured iBeacon.
-- Good classifier tests include:
-  - near sustained for threshold duration becomes near.
-  - brief near spike does not become near.
-  - far sustained for threshold duration becomes far.
-  - missing after far enters grace.
-  - missing after near becomes unsafe.
-  - noisy boundary RSSI does not flap rapidly.
-- Good state machine tests include:
-  - session cannot start when beacon missing.
-  - session starts only after near-confirmation then far-confirmation.
-  - active session locks after sustained near violation.
-  - active session warns during missing grace.
-  - active session locks after missing grace expires.
-  - emergency mode suppresses lock only for configured duration.
-  - emergency extension works once and then refuses further extension.
-  - post-lock unlock rechecks state and relocks when unsafe.
-- MVP success metrics:
-  - Five workdays of usage.
-  - Two sessions per day.
-  - Phone does not remain on desk for more than two minutes during a strict session.
-  - False lockouts fewer than one per day.
-  - Emergency mode used no more than twice per week.
-  - User does not kill, unload, or uninstall daemon during test period.
-- Run `docs/MVP_VALIDATION.md` as the standard end-to-end validation harness and record metric pass/fail evidence.
-- Use validation outcomes plus `docs/BEACONS.md` tested-device evidence to update the product-strategy decision in `docs/BEACON_KIT_VIABILITY.md`.
+- Automated tests must never lock the developer's Mac.
+- The calibrated classifier should be tested with synthetic RSSI sample streams for forbidden, acceptable, uncertain, noisy boundary, missing, and recovery scenarios.
+- Calibration tests should verify confidence results from representative forbidden and acceptable sample sets, including good separation, weak separation, and unusable overlap.
+- Session state machine tests should verify start requirements, waiting-for-acceptable activation, forbidden violation countdown, dry-run lock skip, armed lock request, missing-to-degraded behavior, and recovery through forbidden revalidation then acceptable proximity.
+- Enforcement adapter tests should verify dry-run never calls native lock and armed mode calls the lock adapter only after countdown expiry.
+- Overlay orchestration tests should verify the daemon requests overlay show/update/hide at the right externally visible states without requiring real UI rendering.
+- JSON-RPC tests should verify command contracts, status shape, error handling, event tailing, and socket cleanup behavior.
+- Persistence tests should verify atomic settings/calibration/status round trips and JSONL event append/load behavior.
+- Simulation source tests should verify injected classifications and replay scenarios drive the same daemon behavior as other observation sources.
+- BLE parser tests should verify iBeacon manufacturer data parsing and allowlist matching without requiring hardware.
+- Manual BLE validation should be performed when the beacon arrives: scan/select, RSSI display, calibration, strict session activation, forbidden violation, overlay, armed lock, unlock repeat countdown, and missing degradation.
+- TUI tests should focus on command wiring and render-state mapping where practical; avoid brittle snapshot tests for terminal art unless stable.
+- LaunchAgent integration should use manual smoke tests first: install, start at login, KeepAlive restart after process kill, TUI reconnect, overlay availability, and clean removal.
+- Existing Swift tests should be fixed or migrated so local test runs pass in the current toolchain.
 
 ## Out of Scope
 
 - iOS companion app.
-- Screen Time, FamilyControls, or ManagedSettings integration.
-- Polling the iPhone directly over Bluetooth.
-- Assuming a paired iPhone can be reliably pinged for fresh RSSI while locked.
-- Wi-Fi/IP/mDNS/Bonjour distance estimation.
-- AirTag support.
-- UWB support.
-- Next.js dashboard for MVP.
-- Cloud accounts, sync, teams, or analytics.
-- Cross-platform support.
-- Commercial hardware design for MVP.
-- Required proprietary beacon hardware.
-- Ecommerce, fulfillment, or branded beacon kit work for MVP.
-- Paid software features.
-- Perfect anti-tamper enforcement against a determined local admin.
-- Blocking specific iPhone apps.
-- Managing phone notifications.
-- Replacing a physical phone lockbox for adversarial self-control cases.
+- Direct iPhone sensing without a beacon.
+- Generic BLE device proximity support beyond iBeacon candidate discovery/debugging.
+- AirTag, UWB, Wi-Fi/IP/mDNS/Bonjour distance estimation.
+- Root-owned LaunchDaemon serious mode.
+- Adversarial tamper resistance against a determined local admin.
+- Emergency Co-work Mode for this next phase.
+- Polished macOS menu bar app or SwiftUI dashboard.
+- Cloud accounts, sync, teams, analytics, or telemetry.
+- Ecommerce, fulfillment, branded beacon kit work, or paid software features.
+- Treating simulation as final Working MVP evidence.
+- Locking macOS from missing beacon alone.
 
 ## Further Notes
 
-Brick validates the physical-key/distraction-blocking product category, but it uses an iOS/Android app plus a physical device. This PRD chooses a different architecture: Mac-side enforcement plus a phone-attached BLE beacon. The beacon is required because macOS cannot reliably infer locked iPhone distance without phone cooperation.
+The next-phase implementation order should be:
 
-The critical product truth is behavioral, not only technical. BLE detection working in isolation is not sufficient. The MVP succeeds only if it prevents phone-at-desk behavior during real work sessions without causing so many false lockouts that the user removes the tool.
+1. Fix tests/toolchain and rename domain language from `near`/`far` to `forbidden`/`acceptable`.
+2. Add calibrated classifier and confidence model.
+3. Add daemon core and JSON/JSONL persistence.
+4. Add Unix socket JSON-RPC.
+5. Add simulation source and replay scenarios.
+6. Add Bun TUI session dashboard.
+7. Add native overlay helper.
+8. Add dry-run/armed enforcement and the native lock adapter.
+9. Add unlock/session notifications.
+10. Add BLE iBeacon scanner and scan/select setup.
+11. Add calibration wizard in the TUI.
+12. Add user LaunchAgent install and smoke tests.
+13. Run real-beacon validation when the parcel arrives.
 
-Recommended first hardware purchase: configurable coin/button iBeacon with custom UUID, adjustable transmit power, adjustable advertising interval, and replaceable or rechargeable battery.
+Definition of done for this PRD:
 
-Recommended first productization doc: `docs/PRODUCT.md`, which tracks open-source posture, bring-your-own beacon compatibility, and possible future beacon kits without expanding MVP software scope.
-
-Recommended first prototype name: Faraday.
+- Tests pass locally.
+- Daemon can run manually.
+- TUI connects to daemon.
+- Simulation drives the full strict-session loop: forbidden start, acceptable activation, forbidden violation, overlay countdown, dry-run lock skipped, armed lock path testable with explicit confirmation, and missing-to-degraded behavior.
+- Calibration model exists and blocks armed mode when confidence is weak, unusable, or missing.
+- BLE scanner can detect/select iBeacon hardware when available.
+- Native lock works manually in armed mode.
+- Unlock/session notification causes repeat countdown if still forbidden.
+- JSON/JSONL logs record key events.
+- User LaunchAgent install is documented and smoke-tested.
+- Old v0 PRD is archived, and next implementation issues are created only after user approval.

@@ -32,6 +32,50 @@ _Avoid_: Proprietary license, source-available license
 The separate commercialization plan for selling a beacon kit and paid convenience around the open-source app.
 _Avoid_: MVP requirements, hardware design spec
 
+**Working MVP**:
+A real strict session that runs end-to-end on the user's Mac with a real phone-attached beacon: configured beacon identity, near start confirmation, far activation, near violation warning, native Mac lock, post-unlock recheck, local event logging, and automated tests that never lock the developer's Mac.
+_Avoid_: Simulated-only demo, UI-only prototype, documentation-only milestone
+
+**Almost-working MVP**:
+A near-complete strict-session flow with at most one dev shortcut, such as CLI control instead of polished UI or a basic overlay instead of final UI polish. Real BLE sensing and real lock enforcement still exist.
+_Avoid_: Simulated BLE, no-op lock enforcement
+
+**Chosen phone location**:
+A user-selected acceptable place where the phone-attached beacon may stay during a strict session. It may be another room, hallway, shelf, drawer, or farther-away spot in the same room if validation shows enough RSSI separation. Users may calibrate one acceptable location, but three distinct acceptable locations gives better confidence.
+_Avoid_: Required target room, fixed shelf, prescribed storage place
+
+**Forbidden phone area**:
+The area where the phone must not be during a strict session, usually the desk or within easy reach. Calibration compares this area against acceptable phone locations.
+_Avoid_: Any place with weak RSSI, vague "near" without user meaning
+
+**Acceptable phone location set**:
+One or more user-calibrated places where the phone may live during a strict session. Faraday uses the set to learn an acceptable RSSI range and warn if separation from the forbidden phone area is too weak.
+_Avoid_: Single mandatory location, hardcoded room model
+
+**Acceptable proximity**:
+A trusted classification meaning the beacon signal matches the user-calibrated acceptable phone location set for long enough. This replaces "far" language in user-facing text and code.
+_Avoid_: Required physical distance, required other room, uncalibrated weak signal
+
+**Forbidden proximity**:
+A trusted classification meaning the beacon signal matches the user-calibrated forbidden phone area for long enough. This replaces "near" language in user-facing text and code.
+_Avoid_: Generic closeness, uncalibrated strong signal without user meaning
+
+**Simulated observation source**:
+A development-only source of proximity observations used before real beacon hardware is available. It feeds the same daemon, state machine, TUI, persistence, and enforcement paths as the real BLE source.
+_Avoid_: Separate demo path, fake MVP evidence, replacement for real beacon validation
+
+**Dry-run enforcement**:
+The default enforcement mode where Faraday records lock requests and shows warnings without locking macOS. Used for development, simulation, and early validation.
+_Avoid_: Successful real-lock validation, armed enforcement
+
+**Armed enforcement**:
+An explicit enforcement mode where Faraday may perform a native macOS lock when strict-session rules require it. It requires configured beacon identity, calibrated forbidden phone area, at least one calibrated acceptable phone location, sufficient calibration confidence, and explicit user arming. The UI must make this state obvious.
+_Avoid_: Default mode, hidden lock behavior, uncalibrated native lock
+
+**Beacon-trust failure**:
+A state where Faraday cannot see the configured beacon long enough that proximity can no longer be trusted. Faraday warns clearly, marks the strict session degraded/invalid, and does not lock from missing alone. Recovery requires revalidating the beacon near the desk, then moving it back to the chosen phone location before strict enforcement resumes.
+_Avoid_: Treating absence as proof of far, silent fail-open, fake protection, locking from missing alone, auto-resuming from far after signal returns
+
 ## Relationships
 
 - The **Open-source app** is released under the **Apache-2.0 license**.
