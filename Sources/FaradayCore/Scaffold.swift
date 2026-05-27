@@ -424,6 +424,31 @@ public struct FocusSessionStateMachine {
             return .none
         }
     }
+
+    public mutating func recheckAfterUnlock(classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
+        switch (state, classification) {
+        case (.unsafe, .forbidden):
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .forbidden
+            return .requestLock
+        case (.unsafe, .acceptable):
+            state = .active
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .acceptable
+            return .none
+        case (.unsafe, .missing):
+            state = .degradedBeaconTrust
+            degradedRecoverySawForbidden = false
+            activeMissingSince = timestamp
+            return .none
+        case (.unsafe, .uncertain):
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .uncertain
+            return .none
+        default:
+            return receive(classification: classification, at: timestamp)
+        }
+    }
 }
 
 public struct FaradaySettings: Equatable, Codable {
@@ -827,13 +852,11 @@ public final class FaradayCore {
     public func handle(classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
         processEmergencyTimer(at: timestamp)
 
-        lastClassification = classification
-
-        if classification == .missing {
-            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .missingBeacon))
-        }
-
         if requiresAcceptableAfterEmergency {
+            lastClassification = classification
+            if classification == .missing {
+                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .missingBeacon))
+            }
             if classification == .acceptable {
                 requiresAcceptableAfterEmergency = false
                 if sessionStateMachine.state == .unsafe {
@@ -844,52 +867,21 @@ public final class FaradayCore {
             return .none
         }
 
-        let previousState = sessionStateMachine.state
-        let command = sessionStateMachine.receive(classification: classification, at: timestamp)
+        return processSessionCommand(
+            classification: classification,
+            at: timestamp,
+            commandProvider: { machine, input, time in machine.receive(classification: input, at: time) }
+        )
+    }
 
-        if previousState != .degradedBeaconTrust, sessionStateMachine.state == .degradedBeaconTrust {
-            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .beaconTrustDegraded))
-            if overlayState != .showingDegradedBeaconTrust {
-                overlay.showDegradedBeaconTrust()
-                overlayState = .showingDegradedBeaconTrust
-            }
-        }
-
-        if command == .beginSession {
-            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionBegan))
-        }
-
-        if command == .requestLock {
-            let isEmergencySuppressingLock: Bool
-            switch emergencyModeState {
-            case .pending, .active:
-                isEmergencySuppressingLock = true
-            case .idle:
-                isEmergencySuppressingLock = false
-            }
-
-            if !isEmergencySuppressingLock {
-                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .violation))
-                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .lockRequested))
-                if overlayState != .showingViolation {
-                    overlay.showViolation()
-                    overlayState = .showingViolation
-                }
-                if enforcementMode == .armed {
-                    enforcement.requestLock()
-                } else {
-                    persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .dryRunLockSkipped))
-                }
-            }
-        }
-
-        if sessionStateMachine.state == .active && overlayState != .hidden {
-            overlay.hide()
-            overlayState = .hidden
-        }
-
-        persistStatus()
-        return command == .requestLock ? (isEmergencyActiveOrPending ? .none : .requestLock) : command
+    @discardableResult
+    public func handleUnlockRecheck(classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
+        processEmergencyTimer(at: timestamp)
+        return processSessionCommand(
+            classification: classification,
+            at: timestamp,
+            commandProvider: { machine, input, time in machine.recheckAfterUnlock(classification: input, at: time) }
+        )
     }
 
     public func saveSettings(_ settings: FaradaySettings) {
@@ -1059,6 +1051,58 @@ public final class FaradayCore {
 
     public var state: SessionState {
         sessionStateMachine.state
+    }
+
+    private func processSessionCommand(
+        classification: ProximityClassification,
+        at timestamp: Date,
+        commandProvider: (inout FocusSessionStateMachine, ProximityClassification, Date) -> SessionCommand
+    ) -> SessionCommand {
+        lastClassification = classification
+
+        if classification == .missing {
+            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .missingBeacon))
+        }
+
+        let previousState = sessionStateMachine.state
+        let command = commandProvider(&sessionStateMachine, classification, timestamp)
+
+        if previousState != .degradedBeaconTrust, sessionStateMachine.state == .degradedBeaconTrust {
+            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .beaconTrustDegraded))
+            if overlayState != .showingDegradedBeaconTrust {
+                overlay.showDegradedBeaconTrust()
+                overlayState = .showingDegradedBeaconTrust
+            }
+        }
+
+        if command == .beginSession {
+            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionBegan))
+        }
+
+        if command == .requestLock {
+            let isEmergencySuppressingLock = isEmergencyActiveOrPending
+            if !isEmergencySuppressingLock {
+                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .violation))
+                persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .lockRequested))
+                if overlayState != .showingViolation {
+                    overlay.showViolation()
+                    overlayState = .showingViolation
+                }
+                if enforcementMode == .armed {
+                    enforcement.requestLock()
+                } else {
+                    persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .dryRunLockSkipped))
+                }
+            }
+        }
+
+        if sessionStateMachine.state == .active && overlayState != .hidden {
+            overlay.hide()
+            overlayState = .hidden
+        }
+
+        persistStatus()
+        return command == .requestLock ? (isEmergencyActiveOrPending ? .none : .requestLock) : command
     }
 
     private var isEmergencyActiveOrPending: Bool {

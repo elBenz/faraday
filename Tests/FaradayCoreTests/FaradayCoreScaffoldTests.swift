@@ -119,6 +119,38 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func unlockRecheckEvaluatesClassificationFromUnsafeState() {
+        let enforcement = SpyEnforcementAdapter()
+        let overlay = SpyOverlayAdapter()
+        let core = FaradayCore(
+            sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 1),
+            enforcement: enforcement,
+            overlay: overlay
+        )
+        armForTests(core)
+        let t0 = Date(timeIntervalSince1970: 11_000)
+
+        _ = core.startSession(classification: .forbidden, at: t0)
+        _ = core.handle(classification: .acceptable, at: t0.addingTimeInterval(1))
+        _ = core.handle(classification: .forbidden, at: t0.addingTimeInterval(2))
+
+        let forbiddenRecheck = core.handleUnlockRecheck(classification: .forbidden, at: t0.addingTimeInterval(3))
+        #expect(forbiddenRecheck == .requestLock)
+        #expect(enforcement.requestLockCount == 2)
+
+        let acceptableRecheck = core.handleUnlockRecheck(classification: .acceptable, at: t0.addingTimeInterval(4))
+        #expect(acceptableRecheck == .none)
+        #expect(core.state == .active)
+        #expect(core.readStatus().overlayState == .hidden)
+
+        _ = core.handle(classification: .forbidden, at: t0.addingTimeInterval(5))
+        let missingRecheck = core.handleUnlockRecheck(classification: .missing, at: t0.addingTimeInterval(6))
+        #expect(missingRecheck == .none)
+        #expect(core.state == .degradedBeaconTrust)
+        #expect(overlay.events.contains(.showDegradedBeaconTrust))
+    }
+
+    @Test
     func missingAfterAcceptableDegradesWithoutLockingAndRequiresForbiddenThenAcceptableRecovery() {
         let enforcement = SpyEnforcementAdapter()
         let overlay = SpyOverlayAdapter()
