@@ -68,8 +68,8 @@ public final class BeaconAllowlistScanner {
 }
 
 public enum ProximityClassification: Equatable, Codable {
-    case near
-    case far
+    case forbidden
+    case acceptable
     case uncertain
     case missing
 }
@@ -107,7 +107,7 @@ public final class RSSIClassificationTracer {
 
 public enum SessionState: Equatable, Codable {
     case idle
-    case waitingForFar
+    case waitingForAcceptable
     case active
     case unsafe
 }
@@ -115,7 +115,7 @@ public enum SessionState: Equatable, Codable {
 public enum SessionCommand: Equatable {
     case none
     case showBeaconMissingAtStart
-    case showBeaconMustBeNearAtStart
+    case showBeaconMustBeForbiddenAtStart
     case beginSession
     case endSession
     case requestLock
@@ -154,12 +154,12 @@ public struct FocusSessionStateMachine {
         case .missing:
             state = .idle
             return .showBeaconMissingAtStart
-        case .near:
-            state = .waitingForFar
+        case .forbidden:
+            state = .waitingForAcceptable
             return .none
-        case .far, .uncertain:
+        case .acceptable, .uncertain:
             state = .idle
-            return .showBeaconMustBeNearAtStart
+            return .showBeaconMustBeForbiddenAtStart
         }
     }
 
@@ -172,27 +172,27 @@ public struct FocusSessionStateMachine {
 
     public mutating func receive(classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
         switch (state, classification) {
-        case (.waitingForFar, .far):
+        case (.waitingForAcceptable, .acceptable):
             state = .active
             activeMissingSince = nil
-            lastNonMissingActiveClassification = .far
+            lastNonMissingActiveClassification = .acceptable
             return .beginSession
-        case (.active, .near):
+        case (.active, .forbidden):
             state = .unsafe
             activeMissingSince = nil
-            lastNonMissingActiveClassification = .near
+            lastNonMissingActiveClassification = .forbidden
             return .requestLock
         case (.active, .uncertain):
             activeMissingSince = nil
             lastNonMissingActiveClassification = .uncertain
             return .none
-        case (.active, .far):
+        case (.active, .acceptable):
             activeMissingSince = nil
-            lastNonMissingActiveClassification = .far
+            lastNonMissingActiveClassification = .acceptable
             return .none
         case (.active, .missing):
             let lastClassification = lastNonMissingActiveClassification
-            if lastClassification == .far {
+            if lastClassification == .acceptable {
                 if activeMissingSince == nil {
                     activeMissingSince = timestamp
                     return .none
@@ -208,10 +208,10 @@ public struct FocusSessionStateMachine {
 
             state = .unsafe
             return .requestLock
-        case (.unsafe, .far):
+        case (.unsafe, .acceptable):
             state = .active
             activeMissingSince = nil
-            lastNonMissingActiveClassification = .far
+            lastNonMissingActiveClassification = .acceptable
             return .none
         default:
             return .none
@@ -221,13 +221,13 @@ public struct FocusSessionStateMachine {
 
 public struct FaradaySettings: Equatable, Codable {
     public let beacon: BeaconIdentifier?
-    public let nearThresholdRSSI: Int
-    public let farThresholdRSSI: Int
+    public let forbiddenThresholdRSSI: Int
+    public let acceptableThresholdRSSI: Int
 
-    public init(beacon: BeaconIdentifier?, nearThresholdRSSI: Int, farThresholdRSSI: Int) {
+    public init(beacon: BeaconIdentifier?, forbiddenThresholdRSSI: Int, acceptableThresholdRSSI: Int) {
         self.beacon = beacon
-        self.nearThresholdRSSI = nearThresholdRSSI
-        self.farThresholdRSSI = farThresholdRSSI
+        self.forbiddenThresholdRSSI = forbiddenThresholdRSSI
+        self.acceptableThresholdRSSI = acceptableThresholdRSSI
     }
 }
 
@@ -250,14 +250,14 @@ public enum CalibrationZone: Equatable, Codable {
 }
 
 public struct GuidedCalibrationOutput: Equatable, Codable {
-    public let nearThresholdRSSI: Int
-    public let farThresholdRSSI: Int
+    public let forbiddenThresholdRSSI: Int
+    public let acceptableThresholdRSSI: Int
     public let confidenceNotes: [String]
     public let usedDefaults: Bool
 
-    public init(nearThresholdRSSI: Int, farThresholdRSSI: Int, confidenceNotes: [String], usedDefaults: Bool) {
-        self.nearThresholdRSSI = nearThresholdRSSI
-        self.farThresholdRSSI = farThresholdRSSI
+    public init(forbiddenThresholdRSSI: Int, acceptableThresholdRSSI: Int, confidenceNotes: [String], usedDefaults: Bool) {
+        self.forbiddenThresholdRSSI = forbiddenThresholdRSSI
+        self.acceptableThresholdRSSI = acceptableThresholdRSSI
         self.confidenceNotes = confidenceNotes
         self.usedDefaults = usedDefaults
     }
@@ -293,15 +293,15 @@ public struct GuidedCalibrationEngine {
         }
     }
 
-    public func deriveThresholds(defaultNearThresholdRSSI: Int, defaultFarThresholdRSSI: Int) -> GuidedCalibrationOutput {
+    public func deriveThresholds(defaultForbiddenThresholdRSSI: Int, defaultAcceptableThresholdRSSI: Int) -> GuidedCalibrationOutput {
         guard
             !calibration.deskRSSI.isEmpty,
             !calibration.doorwayRSSI.isEmpty,
             !calibration.targetRoomRSSI.isEmpty
         else {
             return GuidedCalibrationOutput(
-                nearThresholdRSSI: defaultNearThresholdRSSI,
-                farThresholdRSSI: defaultFarThresholdRSSI,
+                forbiddenThresholdRSSI: defaultForbiddenThresholdRSSI,
+                acceptableThresholdRSSI: defaultAcceptableThresholdRSSI,
                 confidenceNotes: ["Calibration incomplete; using default thresholds."],
                 usedDefaults: true
             )
@@ -311,8 +311,8 @@ public struct GuidedCalibrationEngine {
         let doorwayMedian = median(calibration.doorwayRSSI)
         let targetMedian = median(calibration.targetRoomRSSI)
 
-        let nearThreshold = Int((Double(deskMedian + doorwayMedian) / 2.0).rounded())
-        let farThreshold = Int((Double(doorwayMedian + targetMedian) / 2.0).rounded())
+        let forbiddenThreshold = Int((Double(deskMedian + doorwayMedian) / 2.0).rounded())
+        let acceptableThreshold = Int((Double(doorwayMedian + targetMedian) / 2.0).rounded())
         let separation = deskMedian - targetMedian
 
         var notes = ["Calibration complete across desk, doorway/hall, and target room."]
@@ -323,8 +323,8 @@ public struct GuidedCalibrationEngine {
         )
 
         return GuidedCalibrationOutput(
-            nearThresholdRSSI: nearThreshold,
-            farThresholdRSSI: farThreshold,
+            forbiddenThresholdRSSI: forbiddenThreshold,
+            acceptableThresholdRSSI: acceptableThreshold,
             confidenceNotes: notes,
             usedDefaults: false
         )
@@ -343,7 +343,7 @@ public struct GuidedCalibrationEngine {
 }
 
 public enum FaradayEventKind: Equatable, Codable {
-    case sessionWaitingForFar
+    case sessionWaitingForAcceptable
     case sessionBegan
     case sessionEnded
     case missingBeacon
@@ -481,7 +481,7 @@ public final class FaradayCore {
     private let persistence: FaradayPersisting
     private var lastClassification: ProximityClassification?
     private var emergencyModeState: EmergencyModeState = .idle
-    private var requiresFarAfterEmergency = false
+    private var requiresAcceptableAfterEmergency = false
 
     public init(
         sessionStateMachine: FocusSessionStateMachine = FocusSessionStateMachine(),
@@ -504,7 +504,7 @@ public final class FaradayCore {
             persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .missingBeacon))
         }
         if command == .none {
-            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionWaitingForFar))
+            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionWaitingForAcceptable))
         }
 
         persistStatus()
@@ -529,11 +529,11 @@ public final class FaradayCore {
             persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .missingBeacon))
         }
 
-        if requiresFarAfterEmergency {
-            if classification == .far {
-                requiresFarAfterEmergency = false
+        if requiresAcceptableAfterEmergency {
+            if classification == .acceptable {
+                requiresAcceptableAfterEmergency = false
                 if sessionStateMachine.state == .unsafe {
-                    _ = sessionStateMachine.receive(classification: .far, at: timestamp)
+                    _ = sessionStateMachine.receive(classification: .acceptable, at: timestamp)
                 }
             }
             persistStatus()
@@ -634,7 +634,7 @@ public final class FaradayCore {
         case .active:
             return .emergencyActive
         case .idle:
-            return requiresFarAfterEmergency ? .emergencyExpired : .none
+            return requiresAcceptableAfterEmergency ? .emergencyExpired : .none
         }
     }
 
@@ -661,7 +661,7 @@ public final class FaradayCore {
         case let .active(expiresAt, _):
             if timestamp >= expiresAt {
                 emergencyModeState = .idle
-                requiresFarAfterEmergency = true
+                requiresAcceptableAfterEmergency = true
                 persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .emergencyExpired))
             }
         case .idle:
