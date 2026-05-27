@@ -312,6 +312,51 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func calibratedClassifierHandlesForbiddenAcceptableUncertainMissingAndRecovery() {
+        let classifier = CalibratedProximityClassifier(
+            forbiddenThresholdRSSI: -65,
+            acceptableThresholdRSSI: -80,
+            forbiddenSustain: 2,
+            acceptableSustain: 3,
+            missingTimeout: 5
+        )
+        let t0 = Date(timeIntervalSince1970: 50_000)
+
+        #expect(classifier.classify(rssi: -62, at: t0) == .uncertain)
+        #expect(classifier.classify(rssi: -61, at: t0.addingTimeInterval(2.1)) == .forbidden)
+        #expect(classifier.classify(rssi: -74, at: t0.addingTimeInterval(3)) == .uncertain)
+        #expect(classifier.classify(rssi: -84, at: t0.addingTimeInterval(4)) == .uncertain)
+        #expect(classifier.classify(rssi: -85, at: t0.addingTimeInterval(7.2)) == .acceptable)
+
+        #expect(classifier.classify(at: t0.addingTimeInterval(13)) == .missing)
+        #expect(classifier.classify(rssi: -84, at: t0.addingTimeInterval(14)) == .uncertain)
+        #expect(classifier.classify(rssi: -84, at: t0.addingTimeInterval(17.2)) == .acceptable)
+    }
+
+    @Test
+    func calibratedClassifierConfidenceAndArmedEligibility() {
+        let good = CalibratedProximityClassifier.evaluateConfidence(
+            forbiddenRSSISamples: [-56, -57, -55, -58, -54],
+            acceptableRSSISamples: [-84, -86, -83, -85, -87]
+        )
+        let weak = CalibratedProximityClassifier.evaluateConfidence(
+            forbiddenRSSISamples: [-66, -67, -68, -65],
+            acceptableRSSISamples: [-74, -75, -73, -76]
+        )
+        let unusable = CalibratedProximityClassifier.evaluateConfidence(
+            forbiddenRSSISamples: [-71, -72, -70, -73],
+            acceptableRSSISamples: [-72, -71, -73, -70]
+        )
+
+        #expect(good == .good)
+        #expect(weak == .weak)
+        #expect(unusable == .unusable)
+        #expect(CalibratedProximityClassifier.isArmedEnforcementEligible(confidence: .good))
+        #expect(!CalibratedProximityClassifier.isArmedEnforcementEligible(confidence: .weak))
+        #expect(!CalibratedProximityClassifier.isArmedEnforcementEligible(confidence: .unusable))
+    }
+
+    @Test
     func jsonPersistenceRoundTripsSettingsAndEvents() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

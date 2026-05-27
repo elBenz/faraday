@@ -74,6 +74,140 @@ public enum ProximityClassification: Equatable, Codable {
     case missing
 }
 
+public enum CalibrationConfidence: Equatable, Codable {
+    case good
+    case weak
+    case unusable
+}
+
+public final class CalibratedProximityClassifier {
+    private let forbiddenThresholdRSSI: Int
+    private let acceptableThresholdRSSI: Int
+    private let forbiddenSustain: TimeInterval
+    private let acceptableSustain: TimeInterval
+    private let missingTimeout: TimeInterval
+
+    private var lastObservationAt: Date?
+    private var currentStableClassification: ProximityClassification = .uncertain
+    private var candidateClassification: ProximityClassification?
+    private var candidateSince: Date?
+
+    public init(
+        forbiddenThresholdRSSI: Int,
+        acceptableThresholdRSSI: Int,
+        forbiddenSustain: TimeInterval = 5,
+        acceptableSustain: TimeInterval = 15,
+        missingTimeout: TimeInterval = 10
+    ) {
+        self.forbiddenThresholdRSSI = forbiddenThresholdRSSI
+        self.acceptableThresholdRSSI = acceptableThresholdRSSI
+        self.forbiddenSustain = max(0, forbiddenSustain)
+        self.acceptableSustain = max(0, acceptableSustain)
+        self.missingTimeout = max(0, missingTimeout)
+    }
+
+    public func classify(rssi: Int, at timestamp: Date = Date()) -> ProximityClassification {
+        lastObservationAt = timestamp
+
+        let raw: ProximityClassification
+        if rssi >= forbiddenThresholdRSSI {
+            raw = .forbidden
+        } else if rssi <= acceptableThresholdRSSI {
+            raw = .acceptable
+        } else {
+            raw = .uncertain
+        }
+
+        switch raw {
+        case .forbidden:
+            return sustain(raw: .forbidden, at: timestamp, required: forbiddenSustain)
+        case .acceptable:
+            return sustain(raw: .acceptable, at: timestamp, required: acceptableSustain)
+        case .uncertain, .missing:
+            candidateClassification = nil
+            candidateSince = nil
+            currentStableClassification = .uncertain
+            return .uncertain
+        }
+    }
+
+    public func classify(at timestamp: Date = Date()) -> ProximityClassification {
+        guard let lastObservationAt else {
+            return .missing
+        }
+
+        if timestamp.timeIntervalSince(lastObservationAt) >= missingTimeout {
+            currentStableClassification = .missing
+            candidateClassification = nil
+            candidateSince = nil
+            return .missing
+        }
+
+        return currentStableClassification
+    }
+
+    public static func evaluateConfidence(forbiddenRSSISamples: [Int], acceptableRSSISamples: [Int]) -> CalibrationConfidence {
+        guard !forbiddenRSSISamples.isEmpty, !acceptableRSSISamples.isEmpty else {
+            return .unusable
+        }
+
+        let forbiddenMedian = median(forbiddenRSSISamples)
+        let acceptableMedian = median(acceptableRSSISamples)
+        let separation = forbiddenMedian - acceptableMedian
+
+        let forbiddenMin = forbiddenRSSISamples.min() ?? forbiddenMedian
+        let acceptableMax = acceptableRSSISamples.max() ?? acceptableMedian
+        let overlap = acceptableMax >= forbiddenMin
+
+        if !overlap, separation >= 15 {
+            return .good
+        }
+
+        if separation >= 8 {
+            return .weak
+        }
+
+        return .unusable
+    }
+
+    public static func isArmedEnforcementEligible(confidence: CalibrationConfidence) -> Bool {
+        confidence == .good
+    }
+
+    private func sustain(raw: ProximityClassification, at timestamp: Date, required: TimeInterval) -> ProximityClassification {
+        if candidateClassification != raw {
+            candidateClassification = raw
+            candidateSince = timestamp
+            currentStableClassification = .uncertain
+            return .uncertain
+        }
+
+        guard let candidateSince else {
+            candidateSince = timestamp
+            currentStableClassification = .uncertain
+            return .uncertain
+        }
+
+        if timestamp.timeIntervalSince(candidateSince) >= required {
+            currentStableClassification = raw
+            return raw
+        }
+
+        currentStableClassification = .uncertain
+        return .uncertain
+    }
+
+    private static func median(_ values: [Int]) -> Int {
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count % 2 == 1 {
+            return sorted[middle]
+        }
+
+        return Int((Double(sorted[middle - 1] + sorted[middle]) / 2.0).rounded())
+    }
+}
+
 public struct RSSIClassificationTraceEntry: Equatable {
     public let timestamp: Date
     public let classification: ProximityClassification
