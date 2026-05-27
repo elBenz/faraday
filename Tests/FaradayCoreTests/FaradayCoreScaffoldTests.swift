@@ -363,13 +363,23 @@ struct FaradayCoreScaffoldTests {
         let store = JSONFaradayPersistence(baseDirectoryURL: tempDirectory)
         let beacon = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 1, minor: 2)
         let settings = FaradaySettings(beacon: beacon, forbiddenThresholdRSSI: -65, acceptableThresholdRSSI: -80)
-        let timestamp = Date(timeIntervalSince1970: 30_000)
+        let t0 = Date(timeIntervalSince1970: 30_000)
+        let t1 = t0.addingTimeInterval(1)
 
         store.saveSettings(settings)
-        store.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionBegan))
+        store.appendEvent(FaradayEvent(timestamp: t0, kind: .sessionBegan))
+        store.appendEvent(FaradayEvent(timestamp: t1, kind: .lockRequested))
 
         #expect(store.loadSettings() == settings)
-        #expect(store.loadEvents() == [FaradayEvent(timestamp: timestamp, kind: .sessionBegan)])
+        #expect(store.loadEvents() == [
+            FaradayEvent(timestamp: t0, kind: .sessionBegan),
+            FaradayEvent(timestamp: t1, kind: .lockRequested)
+        ])
+
+        let eventsFile = tempDirectory.appendingPathComponent("events.jsonl")
+        let eventsContents = try String(contentsOf: eventsFile, encoding: .utf8)
+        let lines = eventsContents.split(separator: "\n")
+        #expect(lines.count == 2)
     }
 }
 

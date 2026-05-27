@@ -552,7 +552,7 @@ public final class JSONFaradayPersistence: FaradayPersisting {
     public init(baseDirectoryURL: URL, fileManager: FileManager = .default) {
         settingsURL = baseDirectoryURL.appendingPathComponent("settings.json")
         calibrationURL = baseDirectoryURL.appendingPathComponent("calibration.json")
-        eventsURL = baseDirectoryURL.appendingPathComponent("events.json")
+        eventsURL = baseDirectoryURL.appendingPathComponent("events.jsonl")
         statusURL = baseDirectoryURL.appendingPathComponent("status.json")
 
         try? fileManager.createDirectory(at: baseDirectoryURL, withIntermediateDirectories: true)
@@ -575,13 +575,34 @@ public final class JSONFaradayPersistence: FaradayPersisting {
     }
 
     public func appendEvent(_ event: FaradayEvent) {
-        var events = loadEvents()
-        events.append(event)
-        encode(events, to: eventsURL)
+        guard let data = try? encoder.encode(event),
+              var line = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        line.append("\n")
+
+        if let fileHandle = try? FileHandle(forWritingTo: eventsURL) {
+            defer { try? fileHandle.close() }
+            try? fileHandle.seekToEnd()
+            try? fileHandle.write(contentsOf: Data(line.utf8))
+        } else {
+            try? Data(line.utf8).write(to: eventsURL, options: .atomic)
+        }
     }
 
     public func loadEvents() -> [FaradayEvent] {
-        decode([FaradayEvent].self, from: eventsURL) ?? []
+        guard let data = try? Data(contentsOf: eventsURL),
+              let text = String(data: data, encoding: .utf8) else {
+            return []
+        }
+
+        return text
+            .split(whereSeparator: \Character.isNewline)
+            .compactMap { line in
+                guard let lineData = line.data(using: .utf8) else { return nil }
+                return try? decoder.decode(FaradayEvent.self, from: lineData)
+            }
     }
 
     public func saveStatus(_ status: FaradayStatus) {
