@@ -82,9 +82,10 @@ async function calibrationSummary() {
 }
 
 async function render() {
-  const [status, tail] = await Promise.all([
+  const [status, tail, launchAgent] = await Promise.all([
     rpc("faraday.status"),
-    rpc("events.tail", { afterIndex })
+    rpc("events.tail", { afterIndex }),
+    rpc("launchAgent.status").catch(() => ({ installed: false, loaded: false }))
   ]);
   const events = tail.events ?? [];
   if (typeof tail.nextIndex === "number") afterIndex = tail.nextIndex;
@@ -109,6 +110,7 @@ async function render() {
   console.log(`Calibration confidence: ${status.calibrationConfidence ?? "n/a"}`);
   console.log(`Overlay: ${status.overlayState ?? "n/a"}`);
   console.log(`Countdown: ${status.countdownSeconds ?? "n/a"}`);
+  console.log(`LaunchAgent: installed=${launchAgent.installed} loaded=${launchAgent.loaded}`);
 
   if (calibration.active) {
     const acceptable = calibration.acceptableSets.flat();
@@ -128,7 +130,7 @@ async function render() {
   for (const event of events.slice(-10)) {
     console.log(`  [${event.index}] ${event.timestamp} ${event.kind}`);
   }
-  console.log("\nCommands: start forbidden|acceptable|uncertain|missing | stop | mode dryRun|armed | inject <classification> | replay startActivationViolationDryRun|missingDegraded | calibrate start|forbidden-start|forbidden-stop|acceptable-start|acceptable-stop|acceptable-add|redo-forbidden|redo-acceptable|finish | q");
+  console.log("\nCommands: start forbidden|acceptable|uncertain|missing | stop | mode dryRun|armed | inject <classification> | replay startActivationViolationDryRun|missingDegraded | launchagent install|restart|remove|status | calibrate start|forbidden-start|forbidden-stop|acceptable-start|acceptable-stop|acceptable-add|redo-forbidden|redo-acceptable|finish | q");
 }
 
 async function runCommand(line) {
@@ -140,6 +142,12 @@ async function runCommand(line) {
   else if (cmd === "mode") await rpc("enforcement.setMode", { mode: arg });
   else if (cmd === "inject") await rpc("simulation.inject", { classification: arg });
   else if (cmd === "replay") await rpc("simulation.replay", { scenario: arg });
+  else if (cmd === "launchagent") {
+    if (arg === "install") await rpc("launchAgent.install");
+    else if (arg === "restart") await rpc("launchAgent.restart");
+    else if (arg === "remove") await rpc("launchAgent.remove");
+    else if (arg === "status") await rpc("launchAgent.status");
+  }
   else if (cmd === "calibrate") {
     if (arg === "start") {
       calibration.active = true;

@@ -574,6 +574,31 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func rpcSupportsLaunchAgentInstallRestartRemoveAndStatus() throws {
+        let core = FaradayCore()
+        let launchAgent = SpyLaunchAgentController()
+        let service = FaradayRPCService(core: core, launchAgentController: launchAgent)
+
+        let installResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"launchAgent.install\"}".utf8))).jsonObject()
+        #expect((installResponse["result"] as? [String: Any])?["ok"] as? Bool == true)
+
+        let restartResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":22,\"method\":\"launchAgent.restart\"}".utf8))).jsonObject()
+        #expect((restartResponse["result"] as? [String: Any])?["ok"] as? Bool == true)
+
+        let removeResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":23,\"method\":\"launchAgent.remove\"}".utf8))).jsonObject()
+        #expect((removeResponse["result"] as? [String: Any])?["ok"] as? Bool == true)
+
+        let statusResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":24,\"method\":\"launchAgent.status\"}".utf8))).jsonObject()
+        let statusResult = try #require(statusResponse["result"] as? [String: Any])
+        #expect(statusResult["installed"] as? Bool == true)
+        #expect(statusResult["loaded"] as? Bool == false)
+
+        #expect(launchAgent.installs == 1)
+        #expect(launchAgent.restarts == 1)
+        #expect(launchAgent.removes == 1)
+    }
+
+    @Test
     func simulationInjectionMarksStatusAndUsesCoreSessionPath() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
@@ -678,6 +703,28 @@ final class SpyOverlayAdapter: OverlayAdapting {
 
     func hide() {
         events.append(.hide)
+    }
+}
+
+final class SpyLaunchAgentController: LaunchAgentControlling {
+    var installs = 0
+    var restarts = 0
+    var removes = 0
+
+    func install() throws {
+        installs += 1
+    }
+
+    func restart() throws {
+        restarts += 1
+    }
+
+    func remove() throws {
+        removes += 1
+    }
+
+    func status() throws -> LaunchAgentStatus {
+        LaunchAgentStatus(installed: true, loaded: false)
     }
 }
 

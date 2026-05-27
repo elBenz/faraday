@@ -1167,13 +1167,118 @@ public final class FaradayCore {
     }
 }
 
+public struct LaunchAgentStatus: Equatable {
+    public let installed: Bool
+    public let loaded: Bool
+
+    public init(installed: Bool, loaded: Bool) {
+        self.installed = installed
+        self.loaded = loaded
+    }
+}
+
+public protocol LaunchAgentControlling {
+    func install() throws
+    func restart() throws
+    func remove() throws
+    func status() throws -> LaunchAgentStatus
+}
+
+public final class SystemLaunchAgentController: LaunchAgentControlling {
+    public static let label = "works.earendil.faraday.agent"
+
+    private let fileManager: FileManager
+    private let homeDirectory: URL
+    private let daemonExecutablePath: String
+
+    public init(
+        daemonExecutablePath: String = CommandLine.arguments.first ?? "",
+        fileManager: FileManager = .default,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) {
+        self.daemonExecutablePath = daemonExecutablePath
+        self.fileManager = fileManager
+        self.homeDirectory = homeDirectory
+    }
+
+    public func install() throws {
+        guard !daemonExecutablePath.isEmpty else {
+            throw NSError(domain: "FaradayLaunchAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "Daemon executable path is empty"])
+        }
+
+        let launchAgentsDirectory = homeDirectory.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+        let plistURL = launchAgentsDirectory.appendingPathComponent("\(Self.label).plist")
+        try fileManager.createDirectory(at: launchAgentsDirectory, withIntermediateDirectories: true)
+
+        let plist: [String: Any] = [
+            "Label": Self.label,
+            "ProgramArguments": [daemonExecutablePath],
+            "RunAtLoad": true,
+            "KeepAlive": true
+        ]
+        let plistData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try plistData.write(to: plistURL, options: .atomic)
+
+        try runLaunchctl(["bootstrap", "gui/\(getuid())", plistURL.path])
+    }
+
+    public func restart() throws {
+        let plistURL = homeDirectory.appendingPathComponent("Library/LaunchAgents/\(Self.label).plist")
+        _ = try? runLaunchctl(["bootout", "gui/\(getuid())/\(Self.label)"])
+        try runLaunchctl(["bootstrap", "gui/\(getuid())", plistURL.path])
+    }
+
+    public func remove() throws {
+        let plistURL = homeDirectory.appendingPathComponent("Library/LaunchAgents/\(Self.label).plist")
+        _ = try? runLaunchctl(["bootout", "gui/\(getuid())/\(Self.label)"])
+        if fileManager.fileExists(atPath: plistURL.path) {
+            try fileManager.removeItem(at: plistURL)
+        }
+    }
+
+    public func status() throws -> LaunchAgentStatus {
+        let plistURL = homeDirectory.appendingPathComponent("Library/LaunchAgents/\(Self.label).plist")
+        let installed = fileManager.fileExists(atPath: plistURL.path)
+        let output = try? runLaunchctl(["print", "gui/\(getuid())/\(Self.label)"])
+        let loaded = (output?.contains(Self.label) ?? false)
+        return LaunchAgentStatus(installed: installed, loaded: loaded)
+    }
+
+    @discardableResult
+    private func runLaunchctl(_ arguments: [String]) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = arguments
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        try process.run()
+        process.waitUntilExit()
+
+        var outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+        outputData.append(stderr.fileHandleForReading.readDataToEndOfFile())
+        let output = String(data: outputData, encoding: .utf8) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            throw NSError(domain: "FaradayLaunchAgent", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: output.isEmpty ? "launchctl failed" : output])
+        }
+
+        return output
+    }
+}
+
 public final class FaradayRPCService {
     private let core: FaradayCore
+    private let launchAgentController: LaunchAgentControlling
     private let encoder = JSONEncoder()
     private let iso8601 = ISO8601DateFormatter()
 
-    public init(core: FaradayCore) {
+    public init(core: FaradayCore, launchAgentController: LaunchAgentControlling = SystemLaunchAgentController()) {
         self.core = core
+        self.launchAgentController = launchAgentController
     }
 
     public func handle(requestData: Data) -> Data? {
@@ -1317,6 +1422,42 @@ public final class FaradayRPCService {
                 "acceptableMedian": acceptableMedian,
                 "separation": forbiddenMedian - acceptableMedian
             ])
+
+        case "launchAgent.install":
+            do {
+                try launchAgentController.install()
+                return response(id: id, result: ["ok": true])
+            } catch {
+                return response(id: id, error: ["code": -32010, "message": "\(error)"])
+            }
+
+        case "launchAgent.restart":
+            do {
+                try launchAgentController.restart()
+                return response(id: id, result: ["ok": true])
+            } catch {
+                return response(id: id, error: ["code": -32010, "message": "\(error)"])
+            }
+
+        case "launchAgent.remove":
+            do {
+                try launchAgentController.remove()
+                return response(id: id, result: ["ok": true])
+            } catch {
+                return response(id: id, error: ["code": -32010, "message": "\(error)"])
+            }
+
+        case "launchAgent.status":
+            do {
+                let status = try launchAgentController.status()
+                return response(id: id, result: [
+                    "installed": status.installed,
+                    "loaded": status.loaded,
+                    "label": SystemLaunchAgentController.label
+                ])
+            } catch {
+                return response(id: id, error: ["code": -32010, "message": "\(error)"])
+            }
 
         default:
             return response(id: id, error: ["code": -32601, "message": "Method not found"])

@@ -22,7 +22,21 @@ Decision source: `docs/adr/0001-launchd-weak-moment-resistance-posture.md`.
 
 ### A) User LaunchAgent (default MVP)
 
-Install:
+Install (via dashboard control):
+
+```text
+launchagent install
+```
+
+Status/restart/remove (via dashboard controls):
+
+```text
+launchagent status
+launchagent restart
+launchagent remove
+```
+
+Install (manual fallback):
 
 ```bash
 mkdir -p ~/Library/LaunchAgents

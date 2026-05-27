@@ -40,7 +40,7 @@ Run the daemon first, then start the dashboard:
 - `swift run FaradayDaemon`
 - `npm run tui`
 
-The TUI connects over `~/.faraday/faraday.sock`, shows live status/event tail, and supports `start`, `stop`, `mode`, `inject`, `replay`, and `calibrate` (TUI calibration wizard) commands.
+The TUI connects over `~/.faraday/faraday.sock`, shows live status/event tail, and supports `start`, `stop`, `mode`, `inject`, `replay`, `launchagent` (install/restart/remove/status), and `calibrate` (TUI calibration wizard) commands.
 
 ## License
 
