@@ -202,6 +202,19 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func daemonStatusExposesAndPersistsEnforcementMode() {
+        let persistence = InMemoryFaradayPersistence()
+        let core = FaradayCore(persistence: persistence)
+
+        #expect(core.readStatus().enforcementMode == .dryRun)
+
+        core.setEnforcementMode(.armed)
+
+        #expect(core.readStatus().enforcementMode == .armed)
+        #expect(persistence.loadStatus()?.enforcementMode == .armed)
+    }
+
+    @Test
     func persistenceCapturesSettingsStatusAndMajorEvents() {
         let persistence = InMemoryFaradayPersistence()
         let enforcement = SpyEnforcementAdapter()
@@ -357,7 +370,7 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
-    func jsonPersistenceRoundTripsSettingsAndEvents() throws {
+    func jsonPersistenceRoundTripsSettingsAndUsesJSONLEvents() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = JSONFaradayPersistence(baseDirectoryURL: tempDirectory)
@@ -376,9 +389,9 @@ struct FaradayCoreScaffoldTests {
             FaradayEvent(timestamp: t1, kind: .lockRequested)
         ])
 
-        let eventsFile = tempDirectory.appendingPathComponent("events.jsonl")
-        let eventsContents = try String(contentsOf: eventsFile, encoding: .utf8)
-        let lines = eventsContents.split(separator: "\n")
+        let eventsJSONLURL = tempDirectory.appendingPathComponent("events.jsonl")
+        let rawEvents = try String(contentsOf: eventsJSONLURL, encoding: .utf8)
+        let lines = rawEvents.split(separator: "\n")
         #expect(lines.count == 2)
     }
 }

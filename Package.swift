@@ -7,10 +7,12 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .library(name: "FaradayCore", targets: ["FaradayCore"])
+        .library(name: "FaradayCore", targets: ["FaradayCore"]),
+        .executable(name: "FaradayDaemon", targets: ["FaradayDaemon"])
     ],
     targets: [
         .target(name: "FaradayCore"),
+        .executableTarget(name: "FaradayDaemon", dependencies: ["FaradayCore"]),
         .testTarget(name: "FaradayCoreTests", dependencies: ["FaradayCore"])
     ]
 )

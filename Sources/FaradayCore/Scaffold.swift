@@ -499,13 +499,20 @@ public struct FaradayEvent: Equatable, Codable {
     }
 }
 
+public enum EnforcementMode: Equatable, Codable {
+    case dryRun
+    case armed
+}
+
 public struct FaradayStatus: Equatable, Codable {
     public let sessionState: SessionState
     public let lastClassification: ProximityClassification?
+    public let enforcementMode: EnforcementMode
 
-    public init(sessionState: SessionState, lastClassification: ProximityClassification?) {
+    public init(sessionState: SessionState, lastClassification: ProximityClassification?, enforcementMode: EnforcementMode = .dryRun) {
         self.sessionState = sessionState
         self.lastClassification = lastClassification
+        self.enforcementMode = enforcementMode
     }
 }
 
@@ -576,32 +583,29 @@ public final class JSONFaradayPersistence: FaradayPersisting {
 
     public func appendEvent(_ event: FaradayEvent) {
         guard let data = try? encoder.encode(event),
-              var line = String(data: data, encoding: .utf8) else {
+              let line = String(data: data, encoding: .utf8)?.appending("\n").data(using: .utf8)
+        else { return }
+
+        if let handle = try? FileHandle(forWritingTo: eventsURL) {
+            defer { try? handle.close() }
+            try? handle.seekToEnd()
+            try? handle.write(contentsOf: line)
             return
         }
 
-        line.append("\n")
-
-        if let fileHandle = try? FileHandle(forWritingTo: eventsURL) {
-            defer { try? fileHandle.close() }
-            try? fileHandle.seekToEnd()
-            try? fileHandle.write(contentsOf: Data(line.utf8))
-        } else {
-            try? Data(line.utf8).write(to: eventsURL, options: .atomic)
-        }
+        try? line.write(to: eventsURL, options: .atomic)
     }
 
     public func loadEvents() -> [FaradayEvent] {
-        guard let data = try? Data(contentsOf: eventsURL),
-              let text = String(data: data, encoding: .utf8) else {
+        guard let raw = try? String(contentsOf: eventsURL, encoding: .utf8) else {
             return []
         }
 
-        return text
+        return raw
             .split(whereSeparator: \Character.isNewline)
             .compactMap { line in
-                guard let lineData = line.data(using: .utf8) else { return nil }
-                return try? decoder.decode(FaradayEvent.self, from: lineData)
+                guard let data = line.data(using: .utf8) else { return nil }
+                return try? decoder.decode(FaradayEvent.self, from: data)
             }
     }
 
@@ -637,6 +641,7 @@ public final class FaradayCore {
     private var lastClassification: ProximityClassification?
     private var emergencyModeState: EmergencyModeState = .idle
     private var requiresAcceptableAfterEmergency = false
+    private var enforcementMode: EnforcementMode
 
     public init(
         sessionStateMachine: FocusSessionStateMachine = FocusSessionStateMachine(),
@@ -646,7 +651,9 @@ public final class FaradayCore {
         self.sessionStateMachine = sessionStateMachine
         self.enforcement = enforcement
         self.persistence = persistence
-        self.lastClassification = persistence.loadStatus()?.lastClassification
+        let persistedStatus = persistence.loadStatus()
+        self.lastClassification = persistedStatus?.lastClassification
+        self.enforcementMode = persistedStatus?.enforcementMode ?? .dryRun
         persistStatus()
     }
 
@@ -738,7 +745,16 @@ public final class FaradayCore {
     }
 
     public func readStatus() -> FaradayStatus {
-        persistence.loadStatus() ?? FaradayStatus(sessionState: sessionStateMachine.state, lastClassification: lastClassification)
+        persistence.loadStatus() ?? FaradayStatus(
+            sessionState: sessionStateMachine.state,
+            lastClassification: lastClassification,
+            enforcementMode: enforcementMode
+        )
+    }
+
+    public func setEnforcementMode(_ mode: EnforcementMode) {
+        enforcementMode = mode
+        persistStatus()
     }
 
     public func readEvents() -> [FaradayEvent] {
@@ -825,6 +841,12 @@ public final class FaradayCore {
     }
 
     private func persistStatus() {
-        persistence.saveStatus(FaradayStatus(sessionState: sessionStateMachine.state, lastClassification: lastClassification))
+        persistence.saveStatus(
+            FaradayStatus(
+                sessionState: sessionStateMachine.state,
+                lastClassification: lastClassification,
+                enforcementMode: enforcementMode
+            )
+        )
     }
 }
