@@ -436,7 +436,7 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
-    func rpcSupportsScanCandidatesAndManualBeaconSelection() throws {
+    func rpcSupportsScanCandidatesManualBeaconSelectionAndLiveRSSI() throws {
         let persistence = InMemoryFaradayPersistence()
         let core = FaradayCore(persistence: persistence)
         let service = FaradayRPCService(core: core)
@@ -460,6 +460,16 @@ struct FaradayCoreScaffoldTests {
             major: 100,
             minor: 7
         ))
+
+        _ = service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"beacon.scanIngest\",\"params\":{\"manufacturerDataHex\":\"4c000215123456781234123412341234567890ab00640007c5\",\"rssi\":-80}}".utf8))
+        _ = service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"beacon.scanIngest\",\"params\":{\"manufacturerDataHex\":\"4c000215123456781234123412341234567890ab00640007c5\",\"rssi\":-62}}".utf8))
+
+        let liveResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"beacon.liveRSSI\"}".utf8))).jsonObject()
+        let liveResult = try #require(liveResponse["result"] as? [String: Any])
+        #expect(liveResult["selected"] as? Bool == true)
+        let samples = try #require(liveResult["samples"] as? [[String: Any]])
+        #expect(samples.count == 2)
+        #expect(samples.last?["rssi"] as? Int == -62)
     }
 
     @Test

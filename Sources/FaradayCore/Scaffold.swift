@@ -754,6 +754,7 @@ public final class FaradayCore {
     private var requiresAcceptableAfterEmergency = false
     private var enforcementMode: EnforcementMode
     private let candidateTracker = IBeaconCandidateTracker()
+    private var selectedBeaconScanner: BeaconAllowlistScanner?
     private var observationSource: ObservationSource
     private var overlayState: OverlayState
 
@@ -772,6 +773,13 @@ public final class FaradayCore {
         self.enforcementMode = persistedStatus?.enforcementMode ?? .dryRun
         self.observationSource = persistedStatus?.observationSource ?? .live
         self.overlayState = persistedStatus?.overlayState ?? .hidden
+
+        if let beacon = persistence.loadSettings()?.beacon {
+            let scanner = BeaconAllowlistScanner(allowlist: [beacon])
+            scanner.start()
+            self.selectedBeaconScanner = scanner
+        }
+
         persistStatus()
     }
 
@@ -941,7 +949,9 @@ public final class FaradayCore {
             return false
         }
 
-        candidateTracker.ingest(BeaconAdvertisement(identifier: identifier, timestamp: timestamp, rssi: rssi))
+        let advertisement = BeaconAdvertisement(identifier: identifier, timestamp: timestamp, rssi: rssi)
+        candidateTracker.ingest(advertisement)
+        selectedBeaconScanner?.ingest(advertisement)
         return true
     }
 
@@ -958,6 +968,19 @@ public final class FaradayCore {
                 acceptableThresholdRSSI: current?.acceptableThresholdRSSI ?? -80
             )
         )
+
+        let scanner = BeaconAllowlistScanner(allowlist: [identifier])
+        scanner.start()
+        selectedBeaconScanner = scanner
+    }
+
+    public func selectedBeaconLiveObservations(limit: Int = 20) -> [BeaconObservation] {
+        guard let scanner = selectedBeaconScanner else { return [] }
+        let safeLimit = max(1, limit)
+        if scanner.observations.count <= safeLimit {
+            return scanner.observations
+        }
+        return Array(scanner.observations.suffix(safeLimit))
     }
 
     @discardableResult
@@ -1169,6 +1192,15 @@ public final class FaradayRPCService {
             }
             core.selectBeaconIdentity(BeaconIdentifier(uuid: uuid, major: major, minor: minor))
             return response(id: id, result: ["saved": true])
+
+        case "beacon.liveRSSI":
+            let samples = core.selectedBeaconLiveObservations().map { sample in
+                [
+                    "timestamp": iso8601.string(from: sample.timestamp),
+                    "rssi": sample.rssi
+                ]
+            }
+            return response(id: id, result: ["selected": core.loadSettings()?.beacon != nil, "samples": samples])
 
         default:
             return response(id: id, error: ["code": -32601, "message": "Method not found"])
