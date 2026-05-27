@@ -77,6 +77,26 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func overlayOrchestrationShowsOnViolationAndHidesOnRecoveryOrStop() {
+        let overlay = SpyOverlayAdapter()
+        let core = FaradayCore(overlay: overlay)
+
+        _ = core.startSession(classification: .forbidden)
+        _ = core.handle(classification: .acceptable)
+        _ = core.handle(classification: .forbidden)
+
+        #expect(overlay.events == [.showViolation])
+        #expect(core.readStatus().overlayState == .showingViolation)
+
+        _ = core.handle(classification: .acceptable)
+        #expect(overlay.events == [.showViolation, .hide])
+        #expect(core.readStatus().overlayState == .hidden)
+
+        _ = core.stopSession()
+        #expect(overlay.events == [.showViolation, .hide])
+    }
+
+    @Test
     func unsafeProximityLocksOnceUntilAcceptableConfirmedAgain() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
@@ -542,6 +562,23 @@ final class SpyEnforcementAdapter: EnforcementAdapting {
 
     func requestLock() {
         requestLockCount += 1
+    }
+}
+
+final class SpyOverlayAdapter: OverlayAdapting {
+    enum Event: Equatable {
+        case showViolation
+        case hide
+    }
+
+    private(set) var events: [Event] = []
+
+    func showViolation() {
+        events.append(.showViolation)
+    }
+
+    func hide() {
+        events.append(.hide)
     }
 }
 

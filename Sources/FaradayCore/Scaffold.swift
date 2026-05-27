@@ -575,22 +575,41 @@ public enum ObservationSource: Equatable, Codable {
     case simulation
 }
 
+public enum OverlayState: Equatable, Codable {
+    case hidden
+    case showingViolation
+}
+
+public protocol OverlayAdapting {
+    func showViolation()
+    func hide()
+}
+
+public final class NoopOverlayAdapter: OverlayAdapting {
+    public init() {}
+    public func showViolation() {}
+    public func hide() {}
+}
+
 public struct FaradayStatus: Equatable, Codable {
     public let sessionState: SessionState
     public let lastClassification: ProximityClassification?
     public let enforcementMode: EnforcementMode
     public let observationSource: ObservationSource
+    public let overlayState: OverlayState
 
     public init(
         sessionState: SessionState,
         lastClassification: ProximityClassification?,
         enforcementMode: EnforcementMode = .dryRun,
-        observationSource: ObservationSource = .live
+        observationSource: ObservationSource = .live,
+        overlayState: OverlayState = .hidden
     ) {
         self.sessionState = sessionState
         self.lastClassification = lastClassification
         self.enforcementMode = enforcementMode
         self.observationSource = observationSource
+        self.overlayState = overlayState
     }
 }
 
@@ -729,25 +748,30 @@ public final class FaradayCore {
     private var sessionStateMachine: FocusSessionStateMachine
     private let enforcement: EnforcementAdapting
     private let persistence: FaradayPersisting
+    private let overlay: OverlayAdapting
     private var lastClassification: ProximityClassification?
     private var emergencyModeState: EmergencyModeState = .idle
     private var requiresAcceptableAfterEmergency = false
     private var enforcementMode: EnforcementMode
     private let candidateTracker = IBeaconCandidateTracker()
     private var observationSource: ObservationSource
+    private var overlayState: OverlayState
 
     public init(
         sessionStateMachine: FocusSessionStateMachine = FocusSessionStateMachine(),
         enforcement: EnforcementAdapting = NoopEnforcementAdapter(),
+        overlay: OverlayAdapting = NoopOverlayAdapter(),
         persistence: FaradayPersisting = InMemoryFaradayPersistence()
     ) {
         self.sessionStateMachine = sessionStateMachine
         self.enforcement = enforcement
         self.persistence = persistence
+        self.overlay = overlay
         let persistedStatus = persistence.loadStatus()
         self.lastClassification = persistedStatus?.lastClassification
         self.enforcementMode = persistedStatus?.enforcementMode ?? .dryRun
         self.observationSource = persistedStatus?.observationSource ?? .live
+        self.overlayState = persistedStatus?.overlayState ?? .hidden
         persistStatus()
     }
 
@@ -771,6 +795,10 @@ public final class FaradayCore {
     public func stopSession(at timestamp: Date = Date()) -> SessionCommand {
         let command = sessionStateMachine.stop()
         persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionEnded))
+        if overlayState != .hidden {
+            overlay.hide()
+            overlayState = .hidden
+        }
         persistStatus()
         return command
     }
@@ -814,12 +842,21 @@ public final class FaradayCore {
             if !isEmergencySuppressingLock {
                 persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .violation))
                 persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .lockRequested))
+                if overlayState != .showingViolation {
+                    overlay.showViolation()
+                    overlayState = .showingViolation
+                }
                 if enforcementMode == .armed {
                     enforcement.requestLock()
                 } else {
                     persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .dryRunLockSkipped))
                 }
             }
+        }
+
+        if sessionStateMachine.state == .active && overlayState != .hidden {
+            overlay.hide()
+            overlayState = .hidden
         }
 
         persistStatus()
@@ -846,7 +883,9 @@ public final class FaradayCore {
         persistence.loadStatus() ?? FaradayStatus(
             sessionState: sessionStateMachine.state,
             lastClassification: lastClassification,
-            enforcementMode: enforcementMode
+            enforcementMode: enforcementMode,
+            observationSource: observationSource,
+            overlayState: overlayState
         )
     }
 
@@ -1006,7 +1045,8 @@ public final class FaradayCore {
                 sessionState: sessionStateMachine.state,
                 lastClassification: lastClassification,
                 enforcementMode: enforcementMode,
-                observationSource: observationSource
+                observationSource: observationSource,
+                overlayState: overlayState
             )
         )
     }
@@ -1041,7 +1081,8 @@ public final class FaradayRPCService {
                 "sessionState": status.sessionState.rpcName,
                 "lastClassification": status.lastClassification?.rpcName as Any,
                 "enforcementMode": status.enforcementMode.rpcName,
-                "observationSource": status.observationSource.rpcName
+                "observationSource": status.observationSource.rpcName,
+                "overlayState": status.overlayState.rpcName
             ])
 
         case "session.start":
@@ -1264,6 +1305,15 @@ private extension EnforcementMode {
         switch self {
         case .dryRun: return "dryRun"
         case .armed: return "armed"
+        }
+    }
+}
+
+private extension OverlayState {
+    var rpcName: String {
+        switch self {
+        case .hidden: return "hidden"
+        case .showingViolation: return "showingViolation"
         }
     }
 }

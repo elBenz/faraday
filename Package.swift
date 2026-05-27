@@ -8,11 +8,13 @@ let package = Package(
     ],
     products: [
         .library(name: "FaradayCore", targets: ["FaradayCore"]),
-        .executable(name: "FaradayDaemon", targets: ["FaradayDaemon"])
+        .executable(name: "FaradayDaemon", targets: ["FaradayDaemon"]),
+        .executable(name: "FaradayOverlayHelper", targets: ["FaradayOverlayHelper"])
     ],
     targets: [
         .target(name: "FaradayCore"),
         .executableTarget(name: "FaradayDaemon", dependencies: ["FaradayCore"]),
+        .executableTarget(name: "FaradayOverlayHelper"),
         .testTarget(name: "FaradayCoreTests", dependencies: ["FaradayCore"])
     ]
 )
