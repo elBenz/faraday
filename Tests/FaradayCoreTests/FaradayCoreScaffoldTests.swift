@@ -416,6 +416,24 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func rpcCalibrationEvaluateReturnsConfidenceAndArmedEligibility() throws {
+        let core = FaradayCore()
+        let service = FaradayRPCService(core: core)
+
+        let request = """
+        {"jsonrpc":"2.0","id":13,"method":"calibration.evaluate","params":{"forbiddenRSSISamples":[-55,-56,-57,-54],"acceptableRSSISamples":[-84,-85,-83,-86]}}
+        """
+        let response = try #require(service.handle(requestData: Data(request.utf8))).jsonObject()
+        let result = try #require(response["result"] as? [String: Any])
+
+        #expect(result["confidence"] as? String == "good")
+        #expect(result["armedEligible"] as? Bool == true)
+        #expect(result["forbiddenMedian"] as? Int == -56)
+        #expect(result["acceptableMedian"] as? Int == -85)
+        #expect(result["separation"] as? Int == 29)
+    }
+
+    @Test
     func ibeaconParserExtractsIdentifierAndRejectsInvalidPayloads() {
         let payload = Data([
             0x4C, 0x00, 0x02, 0x15,

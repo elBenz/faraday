@@ -1202,9 +1202,42 @@ public final class FaradayRPCService {
             }
             return response(id: id, result: ["selected": core.loadSettings()?.beacon != nil, "samples": samples])
 
+        case "calibration.evaluate":
+            guard
+                let forbidden = params["forbiddenRSSISamples"] as? [Int],
+                let acceptable = params["acceptableRSSISamples"] as? [Int],
+                !forbidden.isEmpty,
+                !acceptable.isEmpty
+            else {
+                return response(id: id, error: ["code": -32602, "message": "Invalid params: forbiddenRSSISamples and acceptableRSSISamples are required"])
+            }
+
+            let confidence = CalibratedProximityClassifier.evaluateConfidence(
+                forbiddenRSSISamples: forbidden,
+                acceptableRSSISamples: acceptable
+            )
+            let forbiddenMedian = Self.median(forbidden)
+            let acceptableMedian = Self.median(acceptable)
+            return response(id: id, result: [
+                "confidence": confidence.rpcName,
+                "armedEligible": CalibratedProximityClassifier.isArmedEnforcementEligible(confidence: confidence),
+                "forbiddenMedian": forbiddenMedian,
+                "acceptableMedian": acceptableMedian,
+                "separation": forbiddenMedian - acceptableMedian
+            ])
+
         default:
             return response(id: id, error: ["code": -32601, "message": "Method not found"])
         }
+    }
+
+    private static func median(_ values: [Int]) -> Int {
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count % 2 == 1 {
+            return sorted[middle]
+        }
+        return Int((Double(sorted[middle - 1] + sorted[middle]) / 2.0).rounded())
     }
 
     private func response(id: Any?, result: [String: Any]? = nil, error: [String: Any]? = nil) -> Data? {
@@ -1348,6 +1381,16 @@ private extension OverlayState {
         switch self {
         case .hidden: return "hidden"
         case .showingViolation: return "showingViolation"
+        }
+    }
+}
+
+private extension CalibrationConfidence {
+    var rpcName: String {
+        switch self {
+        case .good: return "good"
+        case .weak: return "weak"
+        case .unusable: return "unusable"
         }
     }
 }
