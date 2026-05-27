@@ -66,6 +66,7 @@ struct FaradayCoreScaffoldTests {
     func activeSessionRequestsLockWhenBeaconReturnsForbidden() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
+        core.setEnforcementMode(.armed)
 
         _ = core.startSession(classification: .forbidden)
         _ = core.handle(classification: .acceptable)
@@ -79,6 +80,7 @@ struct FaradayCoreScaffoldTests {
     func unsafeProximityLocksOnceUntilAcceptableConfirmedAgain() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
+        core.setEnforcementMode(.armed)
 
         _ = core.startSession(classification: .forbidden)
         _ = core.handle(classification: .acceptable)
@@ -103,6 +105,7 @@ struct FaradayCoreScaffoldTests {
             sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
             enforcement: enforcement
         )
+        core.setEnforcementMode(.armed)
         let start = Date(timeIntervalSince1970: 9_000)
 
         _ = core.startSession(classification: .forbidden)
@@ -138,6 +141,7 @@ struct FaradayCoreScaffoldTests {
             sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
             enforcement: enforcement
         )
+        core.setEnforcementMode(.armed)
         let start = Date(timeIntervalSince1970: 10_000)
 
         _ = core.startSession(classification: .forbidden)
@@ -223,6 +227,7 @@ struct FaradayCoreScaffoldTests {
             enforcement: enforcement,
             persistence: persistence
         )
+        core.setEnforcementMode(.armed)
         let beacon = BeaconIdentifier(uuid: UUID(uuidString: "12345678-1234-1234-1234-1234567890AB")!, major: 10, minor: 11)
         let settings = FaradaySettings(beacon: beacon, forbiddenThresholdRSSI: -70, acceptableThresholdRSSI: -82)
         let t0 = Date(timeIntervalSince1970: 20_000)
@@ -277,6 +282,7 @@ struct FaradayCoreScaffoldTests {
     func emergencyCoworkModeDelayExtensionAndRecovery() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(enforcement: enforcement)
+        core.setEnforcementMode(.armed)
         let start = Date(timeIntervalSince1970: 40_000)
 
         _ = core.startSession(classification: .forbidden, at: start)
@@ -451,6 +457,57 @@ struct FaradayCoreScaffoldTests {
         let events = try #require(tailResult["events"] as? [[String: Any]])
         #expect(events.count == 1)
         #expect(events.first?["kind"] as? String == "sessionEnded")
+    }
+
+    @Test
+    func simulationInjectionMarksStatusAndUsesCoreSessionPath() {
+        let enforcement = SpyEnforcementAdapter()
+        let core = FaradayCore(enforcement: enforcement)
+
+        let start = core.simulateInjection(.forbidden, at: Date(timeIntervalSince1970: 60_000))
+        let activate = core.simulateInjection(.acceptable, at: Date(timeIntervalSince1970: 60_001))
+        let violate = core.simulateInjection(.forbidden, at: Date(timeIntervalSince1970: 60_002))
+
+        #expect(start == .none)
+        #expect(activate == .beginSession)
+        #expect(violate == .requestLock)
+        #expect(core.readStatus().observationSource == .simulation)
+        #expect(enforcement.requestLockCount == 0)
+        #expect(core.readEvents().map(\.kind).contains(.dryRunLockSkipped))
+    }
+
+    @Test
+    func simulationReplaySupportsViolationAndMissingDegradedScenarios() {
+        let core = FaradayCore(
+            sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
+            persistence: InMemoryFaradayPersistence()
+        )
+
+        let dryRun = core.replaySimulationScenario(.startActivationViolationDryRun, at: Date(timeIntervalSince1970: 70_000))
+        #expect(dryRun.commands == [.none, .beginSession, .requestLock])
+
+        let missing = core.replaySimulationScenario(.missingDegraded, at: Date(timeIntervalSince1970: 80_000))
+        #expect(missing.commands == [.none, .beginSession, .none, .requestLock])
+        #expect(core.readStatus().observationSource == .simulation)
+    }
+
+    @Test
+    func rpcSimulationMethodsInjectReplayAndExposeSourceInStatus() throws {
+        let core = FaradayCore()
+        let service = FaradayRPCService(core: core)
+
+        let injectResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"simulation.inject\",\"params\":{\"classification\":\"forbidden\"}}".utf8))).jsonObject()
+        let injectResult = try #require(injectResponse["result"] as? [String: Any])
+        #expect(injectResult["command"] as? String == "none")
+
+        let replayResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"simulation.replay\",\"params\":{\"scenario\":\"missingDegraded\"}}".utf8))).jsonObject()
+        let replayResult = try #require(replayResponse["result"] as? [String: Any])
+        let commands = try #require(replayResult["commands"] as? [String])
+        #expect(commands == ["none", "beginSession", "none", "requestLock"])
+
+        let statusResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"faraday.status\"}".utf8))).jsonObject()
+        let statusResult = try #require(statusResponse["result"] as? [String: Any])
+        #expect(statusResult["observationSource"] as? String == "simulation")
     }
 
     @Test

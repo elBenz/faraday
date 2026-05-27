@@ -548,6 +548,7 @@ public enum FaradayEventKind: Equatable, Codable {
     case missingBeacon
     case violation
     case lockRequested
+    case dryRunLockSkipped
     case emergencyStarted
     case emergencyExtended
     case emergencyRefused
@@ -569,15 +570,27 @@ public enum EnforcementMode: Equatable, Codable {
     case armed
 }
 
+public enum ObservationSource: Equatable, Codable {
+    case live
+    case simulation
+}
+
 public struct FaradayStatus: Equatable, Codable {
     public let sessionState: SessionState
     public let lastClassification: ProximityClassification?
     public let enforcementMode: EnforcementMode
+    public let observationSource: ObservationSource
 
-    public init(sessionState: SessionState, lastClassification: ProximityClassification?, enforcementMode: EnforcementMode = .dryRun) {
+    public init(
+        sessionState: SessionState,
+        lastClassification: ProximityClassification?,
+        enforcementMode: EnforcementMode = .dryRun,
+        observationSource: ObservationSource = .live
+    ) {
         self.sessionState = sessionState
         self.lastClassification = lastClassification
         self.enforcementMode = enforcementMode
+        self.observationSource = observationSource
     }
 }
 
@@ -693,6 +706,19 @@ public final class JSONFaradayPersistence: FaradayPersisting {
     }
 }
 
+public enum SimulationScenario: Equatable {
+    case startActivationViolationDryRun
+    case missingDegraded
+}
+
+public struct SimulationReplayResult: Equatable {
+    public let commands: [SessionCommand]
+
+    public init(commands: [SessionCommand]) {
+        self.commands = commands
+    }
+}
+
 public final class FaradayCore {
     private enum EmergencyModeState {
         case idle
@@ -708,6 +734,7 @@ public final class FaradayCore {
     private var requiresAcceptableAfterEmergency = false
     private var enforcementMode: EnforcementMode
     private let candidateTracker = IBeaconCandidateTracker()
+    private var observationSource: ObservationSource
 
     public init(
         sessionStateMachine: FocusSessionStateMachine = FocusSessionStateMachine(),
@@ -720,6 +747,7 @@ public final class FaradayCore {
         let persistedStatus = persistence.loadStatus()
         self.lastClassification = persistedStatus?.lastClassification
         self.enforcementMode = persistedStatus?.enforcementMode ?? .dryRun
+        self.observationSource = persistedStatus?.observationSource ?? .live
         persistStatus()
     }
 
@@ -786,7 +814,11 @@ public final class FaradayCore {
             if !isEmergencySuppressingLock {
                 persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .violation))
                 persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .lockRequested))
-                enforcement.requestLock()
+                if enforcementMode == .armed {
+                    enforcement.requestLock()
+                } else {
+                    persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .dryRunLockSkipped))
+                }
             }
         }
 
@@ -821,6 +853,43 @@ public final class FaradayCore {
     public func setEnforcementMode(_ mode: EnforcementMode) {
         enforcementMode = mode
         persistStatus()
+    }
+
+    @discardableResult
+    public func simulateInjection(_ classification: ProximityClassification, at timestamp: Date = Date()) -> SessionCommand {
+        observationSource = .simulation
+
+        if state == .idle {
+            return startSession(classification: classification, at: timestamp)
+        }
+
+        return handle(classification: classification, at: timestamp)
+    }
+
+    @discardableResult
+    public func replaySimulationScenario(_ scenario: SimulationScenario, at timestamp: Date = Date()) -> SimulationReplayResult {
+        setEnforcementMode(.dryRun)
+
+        switch scenario {
+        case .startActivationViolationDryRun:
+            _ = stopSession(at: timestamp)
+            let commands: [SessionCommand] = [
+                simulateInjection(.forbidden, at: timestamp),
+                simulateInjection(.acceptable, at: timestamp.addingTimeInterval(1)),
+                simulateInjection(.forbidden, at: timestamp.addingTimeInterval(2))
+            ]
+            return SimulationReplayResult(commands: commands)
+
+        case .missingDegraded:
+            _ = stopSession(at: timestamp)
+            let commands: [SessionCommand] = [
+                simulateInjection(.forbidden, at: timestamp),
+                simulateInjection(.acceptable, at: timestamp.addingTimeInterval(1)),
+                simulateInjection(.missing, at: timestamp.addingTimeInterval(2)),
+                simulateInjection(.missing, at: timestamp.addingTimeInterval(13))
+            ]
+            return SimulationReplayResult(commands: commands)
+        }
     }
 
     public func readEvents() -> [FaradayEvent] {
@@ -936,7 +1005,8 @@ public final class FaradayCore {
             FaradayStatus(
                 sessionState: sessionStateMachine.state,
                 lastClassification: lastClassification,
-                enforcementMode: enforcementMode
+                enforcementMode: enforcementMode,
+                observationSource: observationSource
             )
         )
     }
@@ -970,7 +1040,8 @@ public final class FaradayRPCService {
             return response(id: id, result: [
                 "sessionState": status.sessionState.rpcName,
                 "lastClassification": status.lastClassification?.rpcName as Any,
-                "enforcementMode": status.enforcementMode.rpcName
+                "enforcementMode": status.enforcementMode.rpcName,
+                "observationSource": status.observationSource.rpcName
             ])
 
         case "session.start":
@@ -992,6 +1063,22 @@ public final class FaradayRPCService {
             }
             core.setEnforcementMode(mode)
             return response(id: id, result: ["enforcementMode": mode.rpcName])
+
+        case "simulation.inject":
+            guard let rawClassification = params["classification"] as? String,
+                  let classification = ProximityClassification(rpcName: rawClassification) else {
+                return response(id: id, error: ["code": -32602, "message": "Invalid params: classification is required"])
+            }
+            let command = core.simulateInjection(classification)
+            return response(id: id, result: ["command": command.rpcName])
+
+        case "simulation.replay":
+            guard let rawScenario = params["scenario"] as? String,
+                  let scenario = SimulationScenario(rpcName: rawScenario) else {
+                return response(id: id, error: ["code": -32602, "message": "Invalid params: scenario is required"])
+            }
+            let replay = core.replaySimulationScenario(scenario)
+            return response(id: id, result: ["commands": replay.commands.map(\.rpcName)])
 
         case "events.tail":
             let afterIndex = params["afterIndex"] as? Int ?? -1
@@ -1118,6 +1205,7 @@ private extension FaradayEventKind {
         case .missingBeacon: return "missingBeacon"
         case .violation: return "violation"
         case .lockRequested: return "lockRequested"
+        case .dryRunLockSkipped: return "dryRunLockSkipped"
         case .emergencyStarted: return "emergencyStarted"
         case .emergencyExtended: return "emergencyExtended"
         case .emergencyRefused: return "emergencyRefused"
@@ -1141,6 +1229,25 @@ private extension Data {
             index = next
         }
         self = data
+    }
+}
+
+private extension SimulationScenario {
+    init?(rpcName: String) {
+        switch rpcName {
+        case "startActivationViolationDryRun": self = .startActivationViolationDryRun
+        case "missingDegraded": self = .missingDegraded
+        default: return nil
+        }
+    }
+}
+
+private extension ObservationSource {
+    var rpcName: String {
+        switch self {
+        case .live: return "live"
+        case .simulation: return "simulation"
+        }
     }
 }
 
