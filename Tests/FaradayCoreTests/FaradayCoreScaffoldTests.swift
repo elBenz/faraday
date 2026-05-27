@@ -119,11 +119,13 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
-    func missingAfterAcceptableUsesGraceBeforeLocking() {
+    func missingAfterAcceptableDegradesWithoutLockingAndRequiresForbiddenThenAcceptableRecovery() {
         let enforcement = SpyEnforcementAdapter()
+        let overlay = SpyOverlayAdapter()
         let core = FaradayCore(
             sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
-            enforcement: enforcement
+            enforcement: enforcement,
+            overlay: overlay
         )
         armForTests(core)
         let start = Date(timeIntervalSince1970: 9_000)
@@ -132,14 +134,21 @@ struct FaradayCoreScaffoldTests {
         _ = core.handle(classification: .acceptable, at: start)
 
         let entersGrace = core.handle(classification: .missing, at: start.addingTimeInterval(1))
-        let stillGrace = core.handle(classification: .missing, at: start.addingTimeInterval(5.9))
-        let expiresGrace = core.handle(classification: .missing, at: start.addingTimeInterval(6.1))
+        let degrades = core.handle(classification: .missing, at: start.addingTimeInterval(6.1))
+        let acceptableTooSoon = core.handle(classification: .acceptable, at: start.addingTimeInterval(7))
+        let revalidateForbidden = core.handle(classification: .forbidden, at: start.addingTimeInterval(8))
+        let recoverAcceptable = core.handle(classification: .acceptable, at: start.addingTimeInterval(9))
 
         #expect(entersGrace == .none)
-        #expect(stillGrace == .none)
-        #expect(expiresGrace == .requestLock)
-        #expect(core.state == .unsafe)
-        #expect(enforcement.requestLockCount == 1)
+        #expect(degrades == .none)
+        #expect(acceptableTooSoon == .none)
+        #expect(revalidateForbidden == .none)
+        #expect(recoverAcceptable == .none)
+        #expect(core.state == .active)
+        #expect(enforcement.requestLockCount == 0)
+        #expect(overlay.events.contains(.showDegradedBeaconTrust))
+        #expect(overlay.events.last == .hide)
+        #expect(core.readEvents().map(\.kind).contains(.beaconTrustDegraded))
     }
 
     @Test
@@ -155,10 +164,10 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
-    func missingAfterUncertainLocksImmediately() {
+    func missingAfterUncertainDoesNotLock() {
         let enforcement = SpyEnforcementAdapter()
         let core = FaradayCore(
-            sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 5),
+            sessionStateMachine: FocusSessionStateMachine(missingBeaconGracePeriod: 1),
             enforcement: enforcement
         )
         armForTests(core)
@@ -167,11 +176,12 @@ struct FaradayCoreScaffoldTests {
         _ = core.startSession(classification: .forbidden)
         _ = core.handle(classification: .acceptable, at: start)
         _ = core.handle(classification: .uncertain, at: start.addingTimeInterval(1))
-        let command = core.handle(classification: .missing, at: start.addingTimeInterval(2))
+        _ = core.handle(classification: .missing, at: start.addingTimeInterval(2))
+        let command = core.handle(classification: .missing, at: start.addingTimeInterval(3.2))
 
-        #expect(command == .requestLock)
-        #expect(core.state == .unsafe)
-        #expect(enforcement.requestLockCount == 1)
+        #expect(command == .none)
+        #expect(core.state == .degradedBeaconTrust)
+        #expect(enforcement.requestLockCount == 0)
     }
 
     @Test
@@ -278,14 +288,15 @@ struct FaradayCoreScaffoldTests {
         _ = core.startSession(classification: .forbidden, at: t0)
         _ = core.handle(classification: .acceptable, at: t0.addingTimeInterval(1))
         _ = core.handle(classification: .missing, at: t0.addingTimeInterval(2.1))
+        _ = core.handle(classification: .missing, at: t0.addingTimeInterval(3.2))
 
         let eventKinds = core.readEvents().map(\.kind)
-        #expect(eventKinds == [.sessionWaitingForAcceptable, .sessionBegan, .missingBeacon, .violation, .lockRequested])
+        #expect(eventKinds == [.sessionWaitingForAcceptable, .sessionBegan, .missingBeacon, .missingBeacon, .beaconTrustDegraded])
 
         let status = core.readStatus()
-        #expect(status.sessionState == .unsafe)
+        #expect(status.sessionState == .degradedBeaconTrust)
         #expect(status.lastClassification == .missing)
-        #expect(enforcement.requestLockCount == 1)
+        #expect(enforcement.requestLockCount == 0)
     }
 
     @Test
@@ -558,7 +569,7 @@ struct FaradayCoreScaffoldTests {
         #expect(dryRun.commands == [.none, .beginSession, .requestLock])
 
         let missing = core.replaySimulationScenario(.missingDegraded, at: Date(timeIntervalSince1970: 80_000))
-        #expect(missing.commands == [.none, .beginSession, .none, .requestLock])
+        #expect(missing.commands == [.none, .beginSession, .none, .none])
         #expect(core.readStatus().observationSource == .simulation)
     }
 
@@ -574,7 +585,7 @@ struct FaradayCoreScaffoldTests {
         let replayResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"simulation.replay\",\"params\":{\"scenario\":\"missingDegraded\"}}".utf8))).jsonObject()
         let replayResult = try #require(replayResponse["result"] as? [String: Any])
         let commands = try #require(replayResult["commands"] as? [String])
-        #expect(commands == ["none", "beginSession", "none", "requestLock"])
+        #expect(commands == ["none", "beginSession", "none", "none"])
 
         let statusResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"faraday.status\"}".utf8))).jsonObject()
         let statusResult = try #require(statusResponse["result"] as? [String: Any])
@@ -619,6 +630,7 @@ final class SpyEnforcementAdapter: EnforcementAdapting {
 final class SpyOverlayAdapter: OverlayAdapting {
     enum Event: Equatable {
         case showViolation
+        case showDegradedBeaconTrust
         case hide
     }
 
@@ -626,6 +638,10 @@ final class SpyOverlayAdapter: OverlayAdapting {
 
     func showViolation() {
         events.append(.showViolation)
+    }
+
+    func showDegradedBeaconTrust() {
+        events.append(.showDegradedBeaconTrust)
     }
 
     func hide() {

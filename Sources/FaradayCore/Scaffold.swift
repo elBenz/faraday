@@ -309,6 +309,7 @@ public enum SessionState: Equatable, Codable {
     case waitingForAcceptable
     case active
     case unsafe
+    case degradedBeaconTrust
 }
 
 public enum SessionCommand: Equatable {
@@ -340,6 +341,7 @@ public struct FocusSessionStateMachine {
     private let missingBeaconGracePeriod: TimeInterval
     private var activeMissingSince: Date?
     private var lastNonMissingActiveClassification: ProximityClassification?
+    private var degradedRecoverySawForbidden = false
 
     public init(missingBeaconGracePeriod: TimeInterval = 10) {
         self.missingBeaconGracePeriod = max(0, missingBeaconGracePeriod)
@@ -348,6 +350,7 @@ public struct FocusSessionStateMachine {
     public mutating func start(classification: ProximityClassification) -> SessionCommand {
         activeMissingSince = nil
         lastNonMissingActiveClassification = nil
+        degradedRecoverySawForbidden = false
 
         switch classification {
         case .missing:
@@ -366,6 +369,7 @@ public struct FocusSessionStateMachine {
         state = .idle
         activeMissingSince = nil
         lastNonMissingActiveClassification = nil
+        degradedRecoverySawForbidden = false
         return .endSession
     }
 
@@ -390,25 +394,29 @@ public struct FocusSessionStateMachine {
             lastNonMissingActiveClassification = .acceptable
             return .none
         case (.active, .missing):
-            let lastClassification = lastNonMissingActiveClassification
-            if lastClassification == .acceptable {
-                if activeMissingSince == nil {
-                    activeMissingSince = timestamp
-                    return .none
-                }
-
-                if let activeMissingSince, timestamp.timeIntervalSince(activeMissingSince) >= missingBeaconGracePeriod {
-                    state = .unsafe
-                    return .requestLock
-                }
-
+            if activeMissingSince == nil {
+                activeMissingSince = timestamp
                 return .none
             }
 
-            state = .unsafe
-            return .requestLock
+            if let activeMissingSince, timestamp.timeIntervalSince(activeMissingSince) >= missingBeaconGracePeriod {
+                state = .degradedBeaconTrust
+                degradedRecoverySawForbidden = false
+            }
+            return .none
         case (.unsafe, .acceptable):
             state = .active
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .acceptable
+            return .none
+        case (.degradedBeaconTrust, .forbidden):
+            degradedRecoverySawForbidden = true
+            activeMissingSince = nil
+            lastNonMissingActiveClassification = .forbidden
+            return .none
+        case (.degradedBeaconTrust, .acceptable) where degradedRecoverySawForbidden:
+            state = .active
+            degradedRecoverySawForbidden = false
             activeMissingSince = nil
             lastNonMissingActiveClassification = .acceptable
             return .none
@@ -546,6 +554,7 @@ public enum FaradayEventKind: Equatable, Codable {
     case sessionBegan
     case sessionEnded
     case missingBeacon
+    case beaconTrustDegraded
     case violation
     case lockRequested
     case dryRunLockSkipped
@@ -578,16 +587,19 @@ public enum ObservationSource: Equatable, Codable {
 public enum OverlayState: Equatable, Codable {
     case hidden
     case showingViolation
+    case showingDegradedBeaconTrust
 }
 
 public protocol OverlayAdapting {
     func showViolation()
+    func showDegradedBeaconTrust()
     func hide()
 }
 
 public final class NoopOverlayAdapter: OverlayAdapting {
     public init() {}
     public func showViolation() {}
+    public func showDegradedBeaconTrust() {}
     public func hide() {}
 }
 
@@ -832,7 +844,16 @@ public final class FaradayCore {
             return .none
         }
 
+        let previousState = sessionStateMachine.state
         let command = sessionStateMachine.receive(classification: classification, at: timestamp)
+
+        if previousState != .degradedBeaconTrust, sessionStateMachine.state == .degradedBeaconTrust {
+            persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .beaconTrustDegraded))
+            if overlayState != .showingDegradedBeaconTrust {
+                overlay.showDegradedBeaconTrust()
+                overlayState = .showingDegradedBeaconTrust
+            }
+        }
 
         if command == .beginSession {
             persistence.appendEvent(FaradayEvent(timestamp: timestamp, kind: .sessionBegan))
@@ -1308,6 +1329,7 @@ private extension SessionState {
         case .waitingForAcceptable: return "waitingForAcceptable"
         case .active: return "active"
         case .unsafe: return "unsafe"
+        case .degradedBeaconTrust: return "degradedBeaconTrust"
         }
     }
 }
@@ -1338,6 +1360,7 @@ private extension FaradayEventKind {
         case .sessionBegan: return "sessionBegan"
         case .sessionEnded: return "sessionEnded"
         case .missingBeacon: return "missingBeacon"
+        case .beaconTrustDegraded: return "beaconTrustDegraded"
         case .violation: return "violation"
         case .lockRequested: return "lockRequested"
         case .dryRunLockSkipped: return "dryRunLockSkipped"
@@ -1408,6 +1431,7 @@ private extension OverlayState {
         switch self {
         case .hidden: return "hidden"
         case .showingViolation: return "showingViolation"
+        case .showingDegradedBeaconTrust: return "showingDegradedBeaconTrust"
         }
     }
 }
