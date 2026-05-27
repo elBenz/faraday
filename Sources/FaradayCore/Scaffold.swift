@@ -850,3 +850,170 @@ public final class FaradayCore {
         )
     }
 }
+
+public final class FaradayRPCService {
+    private let core: FaradayCore
+    private let encoder = JSONEncoder()
+    private let iso8601 = ISO8601DateFormatter()
+
+    public init(core: FaradayCore) {
+        self.core = core
+    }
+
+    public func handle(requestData: Data) -> Data? {
+        guard
+            let object = try? JSONSerialization.jsonObject(with: requestData),
+            let request = object as? [String: Any],
+            request["jsonrpc"] as? String == "2.0",
+            let method = request["method"] as? String
+        else {
+            return response(id: nil, error: ["code": -32600, "message": "Invalid Request"])
+        }
+
+        let id = request["id"]
+        let params = request["params"] as? [String: Any] ?? [:]
+
+        switch method {
+        case "faraday.status":
+            let status = core.readStatus()
+            return response(id: id, result: [
+                "sessionState": status.sessionState.rpcName,
+                "lastClassification": status.lastClassification?.rpcName as Any,
+                "enforcementMode": status.enforcementMode.rpcName
+            ])
+
+        case "session.start":
+            guard let rawClassification = params["classification"] as? String,
+                  let classification = ProximityClassification(rpcName: rawClassification) else {
+                return response(id: id, error: ["code": -32602, "message": "Invalid params: classification is required"])
+            }
+            let command = core.startSession(classification: classification)
+            return response(id: id, result: ["command": command.rpcName])
+
+        case "session.stop":
+            let command = core.stopSession()
+            return response(id: id, result: ["command": command.rpcName])
+
+        case "enforcement.setMode":
+            guard let rawMode = params["mode"] as? String,
+                  let mode = EnforcementMode(rpcName: rawMode) else {
+                return response(id: id, error: ["code": -32602, "message": "Invalid params: mode must be dryRun or armed"])
+            }
+            core.setEnforcementMode(mode)
+            return response(id: id, result: ["enforcementMode": mode.rpcName])
+
+        case "events.tail":
+            let afterIndex = params["afterIndex"] as? Int ?? -1
+            let events = core.readEvents()
+            let startIndex = min(max(afterIndex + 1, 0), events.count)
+            let tail = events[startIndex...].enumerated().map { offset, event in
+                [
+                    "index": startIndex + offset,
+                    "timestamp": iso8601.string(from: event.timestamp),
+                    "kind": event.kind.rpcName
+                ]
+            }
+            return response(id: id, result: ["events": tail, "nextIndex": events.count - 1])
+
+        default:
+            return response(id: id, error: ["code": -32601, "message": "Method not found"])
+        }
+    }
+
+    private func response(id: Any?, result: [String: Any]? = nil, error: [String: Any]? = nil) -> Data? {
+        var payload: [String: Any] = ["jsonrpc": "2.0", "id": id as Any]
+        if let result {
+            payload["result"] = result
+        }
+        if let error {
+            payload["error"] = error
+        }
+
+        return try? JSONSerialization.data(withJSONObject: payload)
+    }
+}
+
+private extension ProximityClassification {
+    init?(rpcName: String) {
+        switch rpcName {
+        case "forbidden": self = .forbidden
+        case "acceptable": self = .acceptable
+        case "uncertain": self = .uncertain
+        case "missing": self = .missing
+        default: return nil
+        }
+    }
+
+    var rpcName: String {
+        switch self {
+        case .forbidden: return "forbidden"
+        case .acceptable: return "acceptable"
+        case .uncertain: return "uncertain"
+        case .missing: return "missing"
+        }
+    }
+}
+
+private extension SessionState {
+    var rpcName: String {
+        switch self {
+        case .idle: return "idle"
+        case .waitingForAcceptable: return "waitingForAcceptable"
+        case .active: return "active"
+        case .unsafe: return "unsafe"
+        }
+    }
+}
+
+private extension SessionCommand {
+    var rpcName: String {
+        switch self {
+        case .none: return "none"
+        case .showBeaconMissingAtStart: return "showBeaconMissingAtStart"
+        case .showBeaconMustBeForbiddenAtStart: return "showBeaconMustBeForbiddenAtStart"
+        case .beginSession: return "beginSession"
+        case .endSession: return "endSession"
+        case .requestLock: return "requestLock"
+        case .emergencyReasonRequired: return "emergencyReasonRequired"
+        case .emergencyPending: return "emergencyPending"
+        case .emergencyActive: return "emergencyActive"
+        case .emergencyExtended: return "emergencyExtended"
+        case .emergencyExtensionRefused: return "emergencyExtensionRefused"
+        case .emergencyExpired: return "emergencyExpired"
+        }
+    }
+}
+
+private extension FaradayEventKind {
+    var rpcName: String {
+        switch self {
+        case .sessionWaitingForAcceptable: return "sessionWaitingForAcceptable"
+        case .sessionBegan: return "sessionBegan"
+        case .sessionEnded: return "sessionEnded"
+        case .missingBeacon: return "missingBeacon"
+        case .violation: return "violation"
+        case .lockRequested: return "lockRequested"
+        case .emergencyStarted: return "emergencyStarted"
+        case .emergencyExtended: return "emergencyExtended"
+        case .emergencyRefused: return "emergencyRefused"
+        case .emergencyExpired: return "emergencyExpired"
+        }
+    }
+}
+
+private extension EnforcementMode {
+    init?(rpcName: String) {
+        switch rpcName {
+        case "dryRun": self = .dryRun
+        case "armed": self = .armed
+        default: return nil
+        }
+    }
+
+    var rpcName: String {
+        switch self {
+        case .dryRun: return "dryRun"
+        case .armed: return "armed"
+        }
+    }
+}

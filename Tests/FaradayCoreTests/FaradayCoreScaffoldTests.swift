@@ -370,6 +370,43 @@ struct FaradayCoreScaffoldTests {
     }
 
     @Test
+    func rpcStatusReturnsJSONRPCResultShape() throws {
+        let core = FaradayCore()
+        let service = FaradayRPCService(core: core)
+
+        let responseData = service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"faraday.status\"}".utf8))
+        #expect(responseData != nil)
+
+        let payload = try #require(responseData).jsonObject()
+        #expect(payload["jsonrpc"] as? String == "2.0")
+        #expect(payload["id"] as? Int == 1)
+
+        let result = try #require(payload["result"] as? [String: Any])
+        #expect(result["sessionState"] as? String == "idle")
+        #expect(result["enforcementMode"] as? String == "dryRun")
+    }
+
+    @Test
+    func rpcReturnsMethodNotFoundAndSupportsEventTailing() throws {
+        let persistence = InMemoryFaradayPersistence()
+        let core = FaradayCore(persistence: persistence)
+        let service = FaradayRPCService(core: core)
+
+        _ = core.startSession(classification: .forbidden, at: Date(timeIntervalSince1970: 100))
+        _ = core.stopSession(at: Date(timeIntervalSince1970: 101))
+
+        let unknownResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"bogus.method\"}".utf8))).jsonObject()
+        let unknownError = try #require(unknownResponse["error"] as? [String: Any])
+        #expect(unknownError["code"] as? Int == -32601)
+
+        let tailResponse = try #require(service.handle(requestData: Data("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"events.tail\",\"params\":{\"afterIndex\":0}}".utf8))).jsonObject()
+        let tailResult = try #require(tailResponse["result"] as? [String: Any])
+        let events = try #require(tailResult["events"] as? [[String: Any]])
+        #expect(events.count == 1)
+        #expect(events.first?["kind"] as? String == "sessionEnded")
+    }
+
+    @Test
     func jsonPersistenceRoundTripsSettingsAndUsesJSONLEvents() throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -401,5 +438,15 @@ final class SpyEnforcementAdapter: EnforcementAdapting {
 
     func requestLock() {
         requestLockCount += 1
+    }
+}
+
+private extension Data {
+    func jsonObject() throws -> [String: Any] {
+        let object = try JSONSerialization.jsonObject(with: self)
+        guard let dictionary = object as? [String: Any] else {
+            throw NSError(domain: "FaradayCoreTests", code: 1)
+        }
+        return dictionary
     }
 }
