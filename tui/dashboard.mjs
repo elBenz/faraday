@@ -118,14 +118,32 @@ function formatCandidates(list) {
   if (list.length === 0) return "No beacon candidates seen. Check Bluetooth permission, power on the iBeacon, keep it nearby, then Scan + Select again.";
   return list.slice(0, 8).map((b, i) => `${i + 1}. ${b.uuid ?? "?"} major=${b.major ?? "?"} minor=${b.minor ?? "?"} rssi=${b.lastRSSI ?? "?"} seen=${b.seenCount ?? "?"}`).join("\n");
 }
+function rssiRange(values) {
+  if (!values.length) return "n/a";
+  return `${Math.min(...values)}..${Math.max(...values)}`;
+}
+function rssiBar(value, width = 18) {
+  if (typeof value !== "number") return "";
+  const min = -100, max = -35;
+  const filled = Math.max(0, Math.min(width, Math.round(((value - min) / (max - min)) * width)));
+  return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
+}
 function formatCalibration() {
   const acceptable = calibration.acceptableSets.flat();
+  const forbiddenMedian = median(calibration.forbidden);
+  const acceptableMedian = median(acceptable);
+  const separation = (typeof forbiddenMedian === "number" && typeof acceptableMedian === "number") ? forbiddenMedian - acceptableMedian : null;
+  const gapLabel = separation == null ? "need both samples" : separation >= 15 ? "good" : separation >= 8 ? "weak" : "too small";
   const lines = [
     `phase=${calibration.phase}`,
-    `forbidden n=${calibration.forbidden.length} median=${median(calibration.forbidden) ?? "n/a"} var=${variance(calibration.forbidden).toFixed(1)}`,
-    `acceptable sets=${calibration.acceptableSets.length} n=${acceptable.length} median=${median(acceptable) ?? "n/a"} var=${variance(acceptable).toFixed(1)}`,
+    `desk/forbid n=${calibration.forbidden.length} med=${forbiddenMedian ?? "n/a"} range=${rssiRange(calibration.forbidden)} ${rssiBar(forbiddenMedian)}`,
+    `bed/ok     n=${acceptable.length} med=${acceptableMedian ?? "n/a"} range=${rssiRange(acceptable)} ${rssiBar(acceptableMedian)}`,
+    `gap=${separation ?? "n/a"}dB target≥15 (${gapLabel})`,
     `live ${sparkline(calibration.live)} ${calibration.live.at(-1) ?? ""}`
   ];
+  calibration.acceptableSets.forEach((set, i) => {
+    if (calibration.acceptableSets.length > 1 || set.length) lines.push(`ok spot ${i + 1}: n=${set.length} med=${median(set) ?? "n/a"} range=${rssiRange(set)}`);
+  });
   if (calibration.summary) lines.push(`confidence=${calibration.summary.confidence} separation=${calibration.summary.separation} armed=${calibration.summary.armedEligible ? "yes" : "no"}`);
   return lines.join("\n");
 }
