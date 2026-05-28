@@ -158,13 +158,12 @@ function redoCurrentCalibration() {
 }
 async function ingestCalibrationRSSI() {
   if (screen !== "beacon" || (calibration.phase !== "forbidden" && calibration.phase !== "acceptable")) return;
-  await refreshBeacon().catch(() => {});
-  let rssi = candidates[0]?.lastRSSI;
+  const live = await rpc("beacon.liveRSSI", {}, 800).catch(() => null);
+  const rssi = live?.samples?.at(-1)?.rssi;
   if (typeof rssi !== "number") {
-    const live = await rpc("beacon.liveRSSI", {}, 800).catch(() => null);
-    rssi = live?.samples?.at(-1)?.rssi;
+    message = "No selected-beacon RSSI yet. Run Scan + Select, disconnect DX-SMART, then sample.";
+    return;
   }
-  if (typeof rssi !== "number") return;
   calibration.live = [...calibration.live, rssi].slice(-80);
   if (calibration.phase === "forbidden") calibration.forbidden.push(rssi);
   if (calibration.phase === "acceptable") calibration.acceptableSets[calibration.acceptableIndex].push(rssi);
