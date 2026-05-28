@@ -628,6 +628,55 @@ public final class NoopOverlayAdapter: OverlayAdapting {
     public func hide() {}
 }
 
+public final class ProcessOverlayAdapter: OverlayAdapting {
+    private let helperExecutablePath: String
+    private var process: Process?
+    private var input: FileHandle?
+
+    public init(helperExecutablePath: String) {
+        self.helperExecutablePath = helperExecutablePath
+    }
+
+    public func showViolation() {
+        send("showViolation")
+    }
+
+    public func showDegradedBeaconTrust() {
+        send("showViolation")
+    }
+
+    public func hide() {
+        send("hide")
+    }
+
+    private func send(_ command: String) {
+        do {
+            try ensureProcess()
+            if let data = "\(command)\n".data(using: .utf8) {
+                try input?.write(contentsOf: data)
+            }
+        } catch {
+            // Overlay is advisory; daemon state machine/enforcement remain authoritative.
+        }
+    }
+
+    private func ensureProcess() throws {
+        if let process, process.isRunning, input != nil {
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: helperExecutablePath)
+        let stdin = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = nil
+        process.standardError = nil
+        try process.run()
+        self.process = process
+        self.input = stdin.fileHandleForWriting
+    }
+}
+
 public struct FaradayStatus: Equatable, Codable {
     public let sessionState: SessionState
     public let lastClassification: ProximityClassification?
@@ -1210,9 +1259,16 @@ public final class SystemLaunchAgentController: LaunchAgentControlling {
         let plistURL = launchAgentsDirectory.appendingPathComponent("\(Self.label).plist")
         try fileManager.createDirectory(at: launchAgentsDirectory, withIntermediateDirectories: true)
 
+        let executablePath = daemonExecutablePath.hasPrefix("/")
+            ? daemonExecutablePath
+            : URL(fileURLWithPath: fileManager.currentDirectoryPath)
+                .appendingPathComponent(daemonExecutablePath)
+                .standardizedFileURL
+                .path
+
         let plist: [String: Any] = [
             "Label": Self.label,
-            "ProgramArguments": [daemonExecutablePath],
+            "ProgramArguments": [executablePath],
             "RunAtLoad": true,
             "KeepAlive": true
         ]

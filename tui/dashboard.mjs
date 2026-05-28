@@ -7,6 +7,50 @@ import path from "node:path";
 const socketPath = process.env.FARADAY_SOCKET ?? path.join(os.homedir(), ".faraday", "faraday.sock");
 let nextId = 1;
 let afterIndex = -1;
+let recentEvents = [];
+let lastCommandMessage = "";
+let lastRender = "";
+
+const isTTY = process.stdout.isTTY;
+const color = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  red: "\x1b[31m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  blue: "\x1b[34m",
+  magenta: "\x1b[35m",
+  cyan: "\x1b[36m",
+  gray: "\x1b[90m"
+};
+
+function paint(text, code) {
+  if (!isTTY) return text;
+  return `${code}${text}${color.reset}`;
+}
+
+function badge(value, palette = {}) {
+  const text = String(value ?? "n/a");
+  const code = palette[text] ?? palette.default ?? color.cyan;
+  return paint(text, code);
+}
+
+function row(label, value) {
+  return `${paint(label.padEnd(14), color.gray)} ${value}`;
+}
+
+function box(title, lines) {
+  const width = Math.max(title.length + 4, ...lines.map((line) => stripAnsi(line).length), 0);
+  const top = `╭─ ${paint(title, color.bold)} ${"─".repeat(Math.max(0, width - title.length - 4))}╮`;
+  const body = lines.map((line) => `│ ${line}${" ".repeat(Math.max(0, width - stripAnsi(line).length))} │`);
+  const bottom = `╰${"─".repeat(width + 2)}╯`;
+  return [top, ...body, bottom].join("\n");
+}
+
+function stripAnsi(text) {
+  return String(text).replace(/\x1b\[[0-9;]*m/g, "");
+}
 
 const calibration = {
   active: false,
@@ -22,22 +66,32 @@ function rpc(method, params = {}) {
     const client = net.createConnection(socketPath);
     const request = JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }) + "\n";
     let buffer = "";
+    let settled = false;
+
+    function finish(fn, value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      client.destroy();
+      fn(value);
+    }
+
+    const timer = setTimeout(() => finish(reject, new Error(`RPC timeout for ${method}; is FaradayDaemon running?`)), 1200);
 
     client.on("connect", () => client.write(request));
     client.on("data", (chunk) => {
       buffer += chunk.toString("utf8");
       const idx = buffer.indexOf("\n");
       if (idx === -1) return;
-      client.end();
       try {
         const payload = JSON.parse(buffer.slice(0, idx));
-        if (payload.error) reject(new Error(`${payload.error.code}: ${payload.error.message}`));
-        else resolve(payload.result ?? {});
+        if (payload.error) finish(reject, new Error(`${payload.error.code}: ${payload.error.message}`));
+        else finish(resolve, payload.result ?? {});
       } catch (error) {
-        reject(error);
+        finish(reject, error);
       }
     });
-    client.on("error", reject);
+    client.on("error", (error) => finish(reject, error));
   });
 }
 
@@ -82,12 +136,34 @@ async function calibrationSummary() {
 }
 
 async function render() {
-  const [status, tail, launchAgent] = await Promise.all([
-    rpc("faraday.status"),
-    rpc("events.tail", { afterIndex }),
-    rpc("launchAgent.status").catch(() => ({ installed: false, loaded: false }))
-  ]);
+  let status;
+  let tail = { events: [] };
+  let launchAgent = { installed: false, loaded: false };
+  let connectionError = null;
+
+  try {
+    [status, tail, launchAgent] = await Promise.all([
+      rpc("faraday.status"),
+      rpc("events.tail", { afterIndex }),
+      rpc("launchAgent.status").catch(() => ({ installed: false, loaded: false }))
+    ]);
+  } catch (error) {
+    connectionError = error;
+    status = {
+      observationSource: "offline",
+      enforcementMode: "n/a",
+      sessionState: "disconnected",
+      lastClassification: "n/a",
+      calibrationConfidence: "n/a",
+      overlayState: "n/a",
+      countdownSeconds: "n/a"
+    };
+  }
+
   const events = tail.events ?? [];
+  if (events.length > 0) {
+    recentEvents = [...recentEvents, ...events].slice(-10);
+  }
   if (typeof tail.nextIndex === "number") afterIndex = tail.nextIndex;
 
   if (calibration.active && (calibration.phase === "forbidden" || calibration.phase === "acceptable")) {
@@ -100,37 +176,59 @@ async function render() {
     }
   }
 
-  process.stdout.write("\x1Bc");
-  console.log("Faraday Session Dashboard\n");
-  console.log(`Socket: ${socketPath}`);
-  console.log(`Source: ${status.observationSource}`);
-  console.log(`Mode: ${status.enforcementMode}`);
-  console.log(`Session: ${status.sessionState}`);
-  console.log(`Classification: ${status.lastClassification ?? "n/a"}`);
-  console.log(`Calibration confidence: ${status.calibrationConfidence ?? "n/a"}`);
-  console.log(`Overlay: ${status.overlayState ?? "n/a"}`);
-  console.log(`Countdown: ${status.countdownSeconds ?? "n/a"}`);
-  console.log(`LaunchAgent: installed=${launchAgent.installed} loaded=${launchAgent.loaded}`);
+  const lines = [];
+  lines.push(`${paint("⚡ Faraday", color.bold + color.cyan)} ${paint("Session Dashboard", color.bold)}`);
+  lines.push(paint(`socket ${socketPath}`, color.dim));
+  if (connectionError) {
+    lines.push(paint(`daemon disconnected: ${connectionError.message}`, color.red));
+    lines.push(paint("start it with: swift run FaradayDaemon", color.yellow));
+  }
+  lines.push("");
+
+  lines.push(box("Status", [
+    row("Source", badge(status.observationSource, { simulation: color.magenta, beacon: color.green, default: color.cyan })),
+    row("Mode", badge(status.enforcementMode, { dryRun: color.yellow, armed: color.red })),
+    row("Session", badge(status.sessionState, { inactive: color.gray, idle: color.gray, disconnected: color.red, active: color.green, pendingActivation: color.yellow, violated: color.red, default: color.cyan })),
+    row("Classification", badge(status.lastClassification ?? "n/a", { acceptable: color.green, forbidden: color.red, uncertain: color.yellow, missing: color.gray })),
+    row("Calibration", badge(status.calibrationConfidence ?? "n/a", { high: color.green, medium: color.yellow, low: color.red, default: color.gray })),
+    row("Overlay", badge(status.overlayState ?? "n/a", { hidden: color.gray, showingViolation: color.red, showingDegradedBeaconTrust: color.yellow })),
+    row("Countdown", badge(status.countdownSeconds ?? "n/a", { default: color.yellow })),
+    row("LaunchAgent", `${launchAgent.installed ? paint("installed", color.green) : paint("not installed", color.red)} / ${launchAgent.loaded ? paint("loaded", color.green) : paint("not loaded", color.yellow)}`)
+  ]));
 
   if (calibration.active) {
     const acceptable = calibration.acceptableSets.flat();
     const summary = await calibrationSummary().catch(() => null);
-    console.log("\nCalibration wizard:");
-    console.log(`  phase=${calibration.phase}`);
-    console.log(`  forbidden samples=${calibration.forbidden.length} median=${median(calibration.forbidden) ?? "n/a"} var=${variance(calibration.forbidden).toFixed(1)}`);
-    console.log(`  acceptable sets=${calibration.acceptableSets.length} total samples=${acceptable.length} median=${median(acceptable) ?? "n/a"} var=${variance(acceptable).toFixed(1)}`);
-    console.log(`  live ${sparkline(calibration.live)} ${calibration.live.at(-1) ?? ""}`);
-    if (summary) {
-      console.log(`  confidence=${summary.confidence} separation=${summary.separation} armedEligible=${summary.armedEligible}`);
-    }
+    const calibrationLines = [
+      row("Phase", badge(calibration.phase, { idle: color.gray, forbidden: color.red, acceptable: color.green })),
+      row("Forbidden", `${calibration.forbidden.length} samples · median ${median(calibration.forbidden) ?? "n/a"} · var ${variance(calibration.forbidden).toFixed(1)}`),
+      row("Acceptable", `${calibration.acceptableSets.length} sets · ${acceptable.length} samples · median ${median(acceptable) ?? "n/a"} · var ${variance(acceptable).toFixed(1)}`),
+      row("Live RSSI", `${paint(sparkline(calibration.live), color.cyan)} ${calibration.live.at(-1) ?? ""}`)
+    ];
+    if (summary) calibrationLines.push(row("Eval", `confidence ${badge(summary.confidence, { high: color.green, medium: color.yellow, low: color.red })} · separation ${summary.separation} · armed ${summary.armedEligible ? paint("yes", color.green) : paint("no", color.red)}`));
+    lines.push("");
+    lines.push(box("Calibration", calibrationLines));
   }
 
-  console.log("\nRecent events:");
-  if (events.length === 0) console.log("  (none)");
-  for (const event of events.slice(-10)) {
-    console.log(`  [${event.index}] ${event.timestamp} ${event.kind}`);
+  const eventLines = recentEvents.length === 0
+    ? [paint("(none)", color.dim)]
+    : recentEvents.map((event) => `${paint(String(event.index).padStart(4), color.gray)} ${paint(event.timestamp, color.dim)} ${event.kind}`);
+  lines.push("");
+  lines.push(box("Recent events", eventLines));
+  lines.push("");
+  if (lastCommandMessage) lines.push(lastCommandMessage);
+  lines.push(paint("Commands", color.bold));
+  lines.push("  start <forbidden|acceptable|uncertain|missing>   stop   mode <dryRun|armed>");
+  lines.push("  inject <classification>   replay <scenario>   launchagent <install|restart|remove|status>");
+  lines.push("  calibrate <start|forbidden-start|forbidden-stop|acceptable-start|acceptable-stop|finish>   q");
+
+  lastRender = `${lines.join("\n")}\n`;
+  if (isTTY) {
+    readline.cursorTo(process.stdout, 0, 0);
+    readline.clearScreenDown(process.stdout);
   }
-  console.log("\nCommands: start forbidden|acceptable|uncertain|missing | stop | mode dryRun|armed | inject <classification> | replay startActivationViolationDryRun|missingDegraded | launchagent install|restart|remove|status | calibrate start|forbidden-start|forbidden-stop|acceptable-start|acceptable-stop|acceptable-add|redo-forbidden|redo-acceptable|finish | q");
+  process.stdout.write(lastRender);
+  rl.prompt(true);
 }
 
 async function runCommand(line) {
@@ -147,6 +245,7 @@ async function runCommand(line) {
     else if (arg === "restart") await rpc("launchAgent.restart");
     else if (arg === "remove") await rpc("launchAgent.remove");
     else if (arg === "status") await rpc("launchAgent.status");
+    else throw new Error("usage: launchagent install|restart|remove|status");
   }
   else if (cmd === "calibrate") {
     if (arg === "start") {
@@ -181,14 +280,32 @@ async function runCommand(line) {
 }
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-setInterval(() => render().catch((error) => console.error(`Render error: ${error.message}`)), 1000);
-render().catch((error) => console.error(`Render error: ${error.message}`));
+rl.setPrompt(paint("faraday> ", color.bold + color.cyan));
+
+setInterval(() => {
+  // Do not redraw while user is typing; readline otherwise loses visible input.
+  if (rl.line.length > 0) return;
+  render().catch((error) => {
+    lastCommandMessage = paint(`Render error: ${error.message}`, color.red);
+  });
+}, 1000);
+render().catch((error) => {
+  lastCommandMessage = paint(`Render error: ${error.message}`, color.red);
+});
 
 rl.on("line", async (line) => {
   try {
     await runCommand(line);
-    await render();
+    lastCommandMessage = paint(`✓ ${line.trim() || "noop"}`, color.green);
   } catch (error) {
-    console.error(`Command error: ${error.message}`);
+    lastCommandMessage = paint(`Command error: ${error.message}`, color.red);
   }
+  await render().catch((error) => {
+    lastCommandMessage = paint(`Render error: ${error.message}`, color.red);
+  });
+});
+
+rl.on("close", () => {
+  if (isTTY) process.stdout.write(color.reset);
+  process.exit(0);
 });

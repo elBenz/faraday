@@ -5,7 +5,10 @@ import Foundation
 let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 let baseDirectory = homeDirectory.appendingPathComponent(".faraday", isDirectory: true)
 let persistence = JSONFaradayPersistence(baseDirectoryURL: baseDirectory)
-let core = FaradayCore(persistence: persistence)
+let executablePath = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+let helperPath = executablePath.deletingLastPathComponent().appendingPathComponent("FaradayOverlayHelper").path
+let overlay = ProcessOverlayAdapter(helperExecutablePath: helperPath)
+let core = FaradayCore(overlay: overlay, persistence: persistence)
 let rpc = FaradayRPCService(core: core)
 let socketURL = baseDirectory.appendingPathComponent("faraday.sock")
 

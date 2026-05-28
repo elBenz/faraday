@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:faraday}",
+            "name": "Debug FaradayDaemon",
+            "target": "FaradayDaemon",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug FaradayDaemon"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:faraday}",
+            "name": "Release FaradayDaemon",
+            "target": "FaradayDaemon",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release FaradayDaemon"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:faraday}",
+            "name": "Debug FaradayOverlayHelper",
+            "target": "FaradayOverlayHelper",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug FaradayOverlayHelper"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:faraday}",
+            "name": "Release FaradayOverlayHelper",
+            "target": "FaradayOverlayHelper",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release FaradayOverlayHelper"
+        }
+    ]
+}
