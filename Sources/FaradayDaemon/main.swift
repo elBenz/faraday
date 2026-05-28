@@ -1,6 +1,53 @@
+import CoreBluetooth
 import Darwin
 import FaradayCore
 import Foundation
+
+final class CoreBluetoothIBeaconBridge: NSObject, CBCentralManagerDelegate {
+    private let core: FaradayCore
+    private var central: CBCentralManager!
+
+    init(core: FaradayCore) {
+        self.core = core
+        super.init()
+        central = CBCentralManager(delegate: self, queue: .main)
+    }
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        switch central.state {
+        case .poweredOn:
+            print("Bluetooth powered on; scanning for iBeacon advertisements")
+            central.scanForPeripherals(
+                withServices: nil,
+                options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+            )
+        case .poweredOff:
+            print("Bluetooth powered off; beacon scanning stopped")
+        case .unauthorized:
+            print("Bluetooth unauthorized; grant Bluetooth access to FaradayDaemon or Terminal")
+        case .unsupported:
+            print("Bluetooth unsupported on this Mac")
+        case .resetting:
+            print("Bluetooth resetting")
+        case .unknown:
+            print("Bluetooth state unknown")
+        @unknown default:
+            print("Bluetooth state unhandled: \(central.state.rawValue)")
+        }
+    }
+
+    func centralManager(
+        _ central: CBCentralManager,
+        didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi RSSI: NSNumber
+    ) {
+        guard let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data else {
+            return
+        }
+        _ = core.ingestIBeaconScan(manufacturerData: manufacturerData, rssi: RSSI.intValue)
+    }
+}
 
 let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
 let baseDirectory = homeDirectory.appendingPathComponent(".faraday", isDirectory: true)
@@ -9,6 +56,7 @@ let executablePath = URL(fileURLWithPath: CommandLine.arguments[0]).standardized
 let helperPath = executablePath.deletingLastPathComponent().appendingPathComponent("FaradayOverlayHelper").path
 let overlay = ProcessOverlayAdapter(helperExecutablePath: helperPath)
 let core = FaradayCore(overlay: overlay, persistence: persistence)
+let bluetoothBridge = CoreBluetoothIBeaconBridge(core: core)
 let rpc = FaradayRPCService(core: core)
 let socketURL = baseDirectory.appendingPathComponent("faraday.sock")
 
