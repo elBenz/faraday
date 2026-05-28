@@ -1,6 +1,6 @@
 # MVP Validation Harness
 
-This harness validates Faraday against the PRD success metrics in real-world use.
+This harness validates the Faraday Working MVP against `docs/PRD.md` and the shared language in `CONTEXT.md`. It is for real-beacon evidence only; simulation is useful development evidence but does not complete the Working MVP.
 
 ## 1) Hardware setup checklist (phone-attached configurable iBeacon)
 
@@ -26,45 +26,47 @@ Checklist:
 
 Run this full script at least once before daily usage tracking.
 
-### A. Session start + far activation
+### A. Session start + acceptable activation
 
-- [ ] Start strict session while beacon is near.
-- [ ] Verify system enters waiting-for-far state.
-- [ ] Move phone/beacon to target room.
-- [ ] Verify sustained far confirmation activates session.
+- [ ] Start strict session while beacon is in the forbidden phone area.
+- [ ] Verify system enters `waitingForAcceptable` state.
+- [ ] Move phone/beacon to the chosen acceptable phone location.
+- [ ] Verify sustained acceptable proximity activates the session.
 
 Result: pass / fail
 Notes:
 
-### B. Near violation countdown + lock
+### B. Forbidden violation countdown + armed lock
 
-- [ ] During active session, bring phone/beacon back near desk.
-- [ ] Verify warning/countdown appears.
-- [ ] Keep beacon near through countdown.
+- [ ] During active session, bring phone/beacon back into the forbidden phone area.
+- [ ] Verify native overlay warning/countdown appears.
+- [ ] Verify armed mode is explicit and visible.
+- [ ] Keep beacon in forbidden proximity through countdown.
 - [ ] Verify lock is requested and macOS session locks.
 
 Result: pass / fail
 Notes:
 
-### C. Missing-beacon grace + lock
+### C. Post-unlock recheck
 
-- [ ] Start active session from confirmed far state.
-- [ ] Make beacon temporarily missing (e.g., shield/remove battery briefly).
-- [ ] Verify grace/warning behavior first.
-- [ ] Keep beacon missing beyond grace window.
-- [ ] Verify lock is requested after grace expiry.
+- [ ] Unlock macOS while phone/beacon is still in the forbidden phone area.
+- [ ] Verify Faraday immediately rechecks current classification.
+- [ ] Verify repeat countdown starts with shorter post-unlock timing.
+- [ ] Move phone/beacon to acceptable proximity before countdown expires.
+- [ ] Verify violation clears and active session resumes.
 
 Result: pass / fail
 Notes:
 
-### D. Emergency Co-work Mode
+### D. Missing-beacon degradation without lock
 
-- [ ] Request emergency mode with reason.
-- [ ] Verify pending delay then activation.
-- [ ] Verify lock requests are suppressed while emergency is active.
-- [ ] Use one extension and verify it succeeds.
-- [ ] Attempt second extension and verify refusal.
-- [ ] Verify expiration requires far recovery before lock enforcement resumes.
+- [ ] Start active session from confirmed acceptable proximity.
+- [ ] Make beacon missing beyond the missing timeout (e.g., shield/remove battery briefly).
+- [ ] Verify beacon-trust failure/degraded state appears.
+- [ ] Verify Faraday warns clearly and does **not** lock from missing alone.
+- [ ] Restore beacon in the forbidden phone area to revalidate attachment/aliveness.
+- [ ] Move phone/beacon back to acceptable proximity.
+- [ ] Verify strict enforcement resumes only after acceptable recovery.
 
 Result: pass / fail
 Notes:
@@ -75,7 +77,7 @@ Use at least 5 workdays, with 2 strict sessions per day (minimum 10 sessions).
 
 ### Daily log
 
-| Day | Session | Start/End | Duration (min) | Phone-at-desk during strict session (min) | False lockout? | Emergency used? | Bypass attempt (kill/unload/uninstall)? | Notes |
+| Day | Session | Start/End | Duration (min) | Phone in forbidden phone area during strict session (min) | False lockout? | Beacon-trust failures? | Bypass attempt (kill/unload/uninstall)? | Notes |
 | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |
 | 1 | AM |  |  |  |  |  |  |  |
 | 1 | PM |  |  |  |  |  |  |  |
@@ -91,9 +93,9 @@ Use at least 5 workdays, with 2 strict sessions per day (minimum 10 sessions).
 ### Weekly totals
 
 - Total sessions completed:
-- Total strict-session phone-at-desk minutes:
+- Total strict-session forbidden-area minutes:
 - False lockouts total:
-- Emergency activations total:
+- Beacon-trust failures total:
 - Bypass attempts total:
 
 ## 4) PRD success metric pass/fail sheet
@@ -104,9 +106,9 @@ Mark pass/fail and include evidence pointer (log rows + relevant event timestamp
 | --- | --- | --- | --- | --- |
 | Workdays completed | 5 days |  |  |  |
 | Sessions per day | 2/day |  |  |  |
-| Phone-at-desk during strict session | <= 2 minutes/session |  |  |  |
+| Forbidden-area phone time during strict session | <= 2 minutes/session |  |  |  |
 | False lockouts | < 1/day |  |  |  |
-| Emergency usage | <= 2/week |  |  |  |
+| Beacon-trust failures | Tracked; no native lock from missing alone |  |  |  |
 | Bypass behavior | No kill/unload/uninstall during test period |  |  |  |
 
 ## 5) Feeding findings into Beads follow-up issues

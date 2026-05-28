@@ -1,0 +1,23 @@
+#!/usr/bin/env bun
+import { setup, check, stop, remove, smoke, formatCheck, openDashboard, startLaunchAgent } from "./tui/ops.mjs";
+
+const [cmd = "dashboard", ...args] = process.argv.slice(2);
+const flags = new Set(args.filter((a) => a.startsWith("--")));
+
+async function main() {
+  if (cmd === "dashboard" || cmd === "home") return openDashboard();
+  if (cmd === "setup") return console.log(formatCheck(await setup({ yes: flags.has("--yes") || flags.has("-y") })));
+  if (cmd === "check" || cmd === "status" || cmd === "doctor") return console.log(formatCheck(await check()));
+  if (cmd === "stop") return console.log(formatCheck(await stop()));
+  if (cmd === "remove") return console.log(formatCheck(await remove({ purge: flags.has("--purge"), yes: flags.has("--yes") || flags.has("-y") })));
+  if (cmd === "start" || cmd === "restart") { startLaunchAgent(); return console.log(formatCheck(await check())); }
+  if (cmd === "smoke") return console.log(formatCheck(await smoke({ cleanup: flags.has("--cleanup"), overlay: flags.has("--overlay") })));
+  if (cmd === "help" || cmd === "--help" || cmd === "-h") return help();
+  console.error(`Unknown command: ${cmd}\n`); help(); process.exit(2);
+}
+
+function help() {
+  console.log(`Faraday\n\nUsage:\n  ./faraday             Open dashboard\n  ./faraday setup       Build, install, start, verify\n  ./faraday check       Status + safe smoke-lite\n  ./faraday stop        Stop daemon, keep installed\n  ./faraday remove      Uninstall LaunchAgent/binaries, keep data\n\nAdvanced:\n  ./faraday start|restart|status|smoke|doctor\n  ./faraday smoke --overlay\n  ./faraday remove --purge\n`);
+}
+
+main().catch((error) => { console.error(error.message); process.exit(1); });

@@ -18,6 +18,24 @@ Decision source: `docs/adr/0001-launchd-weak-moment-resistance-posture.md`.
 
 > Replace paths/labels below with final implementation values when installer lands.
 
+## User-facing command surface
+
+The MVP user-facing command surface is intentionally small:
+
+```bash
+./faraday          # open dashboard; auto-starts installed LaunchAgent if needed
+./faraday setup    # build, install, start, and verify user LaunchAgent
+./faraday check    # status, doctor output, and smoke-lite verification
+./faraday stop     # unload/disable daemon temporarily; keep installation files
+./faraday remove   # unload and remove LaunchAgent plist; verify no relaunch
+```
+
+Advanced commands may exist for development (`start`, `restart`, `status`, `smoke`, `doctor`) but should not be the primary documented product surface. `smoke` must not show a blocking overlay by default; visual overlay smoke requires `./faraday smoke --overlay` and must clean up the session/overlay afterward.
+
+`setup` must be idempotent and safe to rerun. It always runs `swift build`, copies `FaradayDaemon` and `FaradayOverlayHelper` into `~/.faraday/bin/`, and points launchd at that stable install path. Before enabling the LaunchAgent, it must explain that Faraday starts at login, restarts if it exits, can show overlays, and can lock macOS only in explicit armed mode. It must also show how to stop temporarily and remove completely.
+
+`stop` means the daemon stays stopped until the user runs `setup` or an explicit start command. It should unload/disable the LaunchAgent job while leaving installation files in place.
+
 ## Install / restart / remove
 
 ### A) User LaunchAgent (default MVP)
@@ -28,12 +46,13 @@ Install (via dashboard control):
 launchagent install
 ```
 
-Status/restart/remove (via dashboard controls):
+Status/stop/restart/remove (via dashboard controls or `./faraday` command):
 
 ```text
-launchagent status
-launchagent restart
-launchagent remove
+./faraday check
+./faraday stop
+./faraday restart
+./faraday remove
 ```
 
 Install (manual fallback):

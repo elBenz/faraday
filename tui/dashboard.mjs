@@ -1,311 +1,282 @@
 #!/usr/bin/env bun
-import net from "node:net";
 import readline from "node:readline";
-import os from "node:os";
-import path from "node:path";
-
-const socketPath = process.env.FARADAY_SOCKET ?? path.join(os.homedir(), ".faraday", "faraday.sock");
-let nextId = 1;
-let afterIndex = -1;
-let recentEvents = [];
-let lastCommandMessage = "";
-let lastRender = "";
+import { rpc, socketPath } from "./rpc.mjs";
+import { check, formatCheck, setup, stop, remove, startLaunchAgent } from "./ops.mjs";
 
 const isTTY = process.stdout.isTTY;
-const color = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  red: "\x1b[31m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  blue: "\x1b[34m",
-  magenta: "\x1b[35m",
-  cyan: "\x1b[36m",
-  gray: "\x1b[90m"
+const c = { reset:"\x1b[0m", bold:"\x1b[1m", dim:"\x1b[2m", red:"\x1b[31m", green:"\x1b[32m", yellow:"\x1b[33m", blue:"\x1b[34m", magenta:"\x1b[35m", cyan:"\x1b[36m", gray:"\x1b[90m", inv:"\x1b[7m" };
+const paint = (s, code) => isTTY ? `${code}${s}${c.reset}` : s;
+const strip = (s) => String(s).replace(/\x1b\[[0-9;]*m/g, "");
+
+let screen = "home";
+let selected = 0;
+let message = "";
+let status = null;
+let launchCheck = null;
+let events = [];
+let commandMode = false;
+let command = "";
+let afterIndex = -1;
+let candidates = [];
+let calibration = { phase: "idle", forbidden: [], acceptableSets: [[]], acceptableIndex: 0, live: [], summary: null };
+
+function terminalRows() {
+  return process.stdout.rows || 30;
+}
+
+const cards = {
+  home: [
+    ["Setup", "Build/install/start", async () => { message = formatCheck(await setup()); }],
+    ["Check", "Status + fixes", async () => { screen = "check"; message = formatCheck(await check()); }],
+    ["Session", "Focus controls", () => { screen = "session"; selected = 0; }],
+    ["Beacon", "Scan/calibrate", () => { screen = "beacon"; selected = 0; }],
+    ["Logs", "Recent events", () => { screen = "logs"; selected = 0; }],
+    ["Stop", "Unload daemon", async () => { message = formatCheck(await stop()); }],
+    ["Remove", "Uninstall, keep data", async () => { message = formatCheck(await remove()); }],
+    ["Advanced", "Dev commands", () => { screen = "advanced"; selected = 0; }]
+  ],
+  session: [
+    ["Start", "Begin strict session", () => rpc("session.start", { classification: "forbidden" })],
+    ["Stop", "End session", () => rpc("session.stop")],
+    ["Dry-run", "No native lock", () => rpc("enforcement.setMode", { mode: "dryRun" })],
+    ["Armed", "May lock macOS", () => rpc("enforcement.setMode", { mode: "armed" })],
+    ["Violation replay", "Dry-run scenario", () => rpc("simulation.replay", { scenario: "startActivationViolationDryRun" })],
+    ["Back", "Home", () => { screen = "home"; selected = 0; }]
+  ],
+  beacon: [
+    ["Scan + Select", "Use strongest beacon", async () => { await selectStrongestCandidate(); }],
+    ["Forbidden", "Start/stop desk sample", () => { toggleForbiddenSample(); }],
+    ["Acceptable", "Start/stop phone spot", () => { toggleAcceptableSample(); }],
+    ["Add spot", "New acceptable place", () => { calibration.acceptableSets.push([]); calibration.acceptableIndex = calibration.acceptableSets.length - 1; calibration.phase = "acceptable"; message = `Sampling acceptable spot ${calibration.acceptableSets.length}.`; }],
+    ["Evaluate", "Confidence check", async () => { await evaluateCalibration(); message = formatCalibration(); }],
+    ["Back", "Home", () => { screen = "home"; selected = 0; }]
+  ],
+  logs: [["Back", "Home", () => { screen = "home"; selected = 0; }]],
+  check: [["Run check", "Refresh diagnostics", async () => { message = formatCheck(await check()); }], ["Back", "Home", () => { screen = "home"; selected = 0; }]],
+  advanced: [
+    ["Start LaunchAgent", "Hidden op", async () => { startLaunchAgent(); message = formatCheck(await check()); }],
+    ["Inject forbidden", "Simulation", () => rpc("simulation.inject", { classification: "forbidden" })],
+    ["Inject acceptable", "Simulation", () => rpc("simulation.inject", { classification: "acceptable" })],
+    ["Command mode", "Press : too", () => { commandMode = true; command = ""; }],
+    ["Back", "Home", () => { screen = "home"; selected = 0; }]
+  ]
 };
 
-function paint(text, code) {
-  if (!isTTY) return text;
-  return `${code}${text}${color.reset}`;
+function row(label, value) { return `${paint(label.padEnd(15), c.gray)} ${value ?? "n/a"}`; }
+function badge(value) {
+  const v = String(value ?? "n/a");
+  const code = { active:c.green, acceptable:c.green, forbidden:c.red, armed:c.red, dryRun:c.yellow, missing:c.gray, uncertain:c.yellow, disconnected:c.red }[v] ?? c.cyan;
+  return paint(v, code);
 }
-
-function badge(value, palette = {}) {
-  const text = String(value ?? "n/a");
-  const code = palette[text] ?? palette.default ?? color.cyan;
-  return paint(text, code);
-}
-
-function row(label, value) {
-  return `${paint(label.padEnd(14), color.gray)} ${value}`;
-}
-
 function box(title, lines) {
-  const width = Math.max(title.length + 4, ...lines.map((line) => stripAnsi(line).length), 0);
-  const top = `╭─ ${paint(title, color.bold)} ${"─".repeat(Math.max(0, width - title.length - 4))}╮`;
-  const body = lines.map((line) => `│ ${line}${" ".repeat(Math.max(0, width - stripAnsi(line).length))} │`);
-  const bottom = `╰${"─".repeat(width + 2)}╯`;
-  return [top, ...body, bottom].join("\n");
+  const width = Math.max(title.length + 4, ...lines.map((l) => strip(l).length), 20);
+  return [`╭─ ${paint(title, c.bold)} ${"─".repeat(Math.max(0, width-title.length-4))}╮`, ...lines.map((l) => `│ ${l}${" ".repeat(width-strip(l).length)} │`), `╰${"─".repeat(width+2)}╯`].join("\n");
 }
-
-function stripAnsi(text) {
-  return String(text).replace(/\x1b\[[0-9;]*m/g, "");
+function card(title, subtitle, active) {
+  const w = 22;
+  const t = title.slice(0, w - 2).padEnd(w - 2);
+  const s = subtitle.slice(0, w - 2).padEnd(w - 2);
+  const border = active ? c.cyan : c.reset;
+  const marker = active ? paint("▶", c.cyan + c.bold) : " ";
+  return [
+    `${marker}${paint(`╭${"─".repeat(w)}╮`, border)}`,
+    ` ${paint("│", border)} ${paint(t, active ? c.cyan + c.bold : c.bold)} ${paint("│", border)}`,
+    ` ${paint("│", border)} ${paint(s, active ? c.cyan : c.dim)} ${paint("│", border)}`,
+    ` ${paint(`╰${"─".repeat(w)}╯`, border)}`
+  ].join("\n");
 }
-
-const calibration = {
-  active: false,
-  phase: "idle", // idle|forbidden|acceptable
-  forbidden: [],
-  acceptableSets: [[]],
-  currentAcceptableIndex: 0,
-  live: []
-};
-
-function rpc(method, params = {}) {
-  return new Promise((resolve, reject) => {
-    const client = net.createConnection(socketPath);
-    const request = JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }) + "\n";
-    let buffer = "";
-    let settled = false;
-
-    function finish(fn, value) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      client.destroy();
-      fn(value);
-    }
-
-    const timer = setTimeout(() => finish(reject, new Error(`RPC timeout for ${method}; is FaradayDaemon running?`)), 1200);
-
-    client.on("connect", () => client.write(request));
-    client.on("data", (chunk) => {
-      buffer += chunk.toString("utf8");
-      const idx = buffer.indexOf("\n");
-      if (idx === -1) return;
-      try {
-        const payload = JSON.parse(buffer.slice(0, idx));
-        if (payload.error) finish(reject, new Error(`${payload.error.code}: ${payload.error.message}`));
-        else finish(resolve, payload.result ?? {});
-      } catch (error) {
-        finish(reject, error);
-      }
-    });
-    client.on("error", (error) => finish(reject, error));
-  });
+function renderCards(items) {
+  const chunks = items.map((it, i) => card(it[0], it[1], i === selected).split("\n"));
+  const rows = [];
+  for (let i = 0; i < chunks.length; i += 3) {
+    for (let line = 0; line < 4; line++) rows.push(chunks.slice(i, i + 3).map((x) => x[line]).join("  "));
+    rows.push("");
+  }
+  return rows.join("\n");
 }
-
 function median(values) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const i = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[i] : Math.round((sorted[i - 1] + sorted[i]) / 2);
+  return sorted.length % 2 ? sorted[i] : Math.round((sorted[i - 1] + sorted[i]) / 2);
 }
-
 function variance(values) {
   if (values.length < 2) return 0;
   const mean = values.reduce((s, x) => s + x, 0) / values.length;
   return values.reduce((s, x) => s + (x - mean) ** 2, 0) / values.length;
 }
-
-function sparkline(values, width = 24) {
+function sparkline(values, width = 28) {
   if (values.length === 0) return "";
   const blocks = "▁▂▃▄▅▆▇█";
   const sample = values.slice(-width);
-  const min = Math.min(...sample);
-  const max = Math.max(...sample);
+  const min = Math.min(...sample), max = Math.max(...sample);
   if (min === max) return blocks[3].repeat(sample.length);
   return sample.map((v) => blocks[Math.max(0, Math.min(7, Math.round(((v - min) / (max - min)) * 7)))]).join("");
 }
-
-async function ingestLiveRSSI() {
-  const candidates = await rpc("beacon.scanCandidates");
-  const list = candidates.candidates ?? [];
-  if (list.length === 0) return null;
-  const strongest = [...list].sort((a, b) => b.lastRSSI - a.lastRSSI)[0];
-  return strongest.lastRSSI;
+function formatCandidates(list) {
+  if (list.length === 0) return "No beacon candidates seen.";
+  return list.slice(0, 8).map((b, i) => `${i + 1}. ${b.uuid ?? "?"} major=${b.major ?? "?"} minor=${b.minor ?? "?"} rssi=${b.lastRSSI ?? "?"} seen=${b.seenCount ?? "?"}`).join("\n");
 }
-
-async function calibrationSummary() {
-  if (!calibration.active || calibration.forbidden.length === 0 || calibration.acceptableSets.flat().length === 0) return null;
+function formatCalibration() {
   const acceptable = calibration.acceptableSets.flat();
-  return rpc("calibration.evaluate", {
-    forbiddenRSSISamples: calibration.forbidden,
-    acceptableRSSISamples: acceptable
-  });
+  const lines = [
+    `phase=${calibration.phase}`,
+    `forbidden n=${calibration.forbidden.length} median=${median(calibration.forbidden) ?? "n/a"} var=${variance(calibration.forbidden).toFixed(1)}`,
+    `acceptable sets=${calibration.acceptableSets.length} n=${acceptable.length} median=${median(acceptable) ?? "n/a"} var=${variance(acceptable).toFixed(1)}`,
+    `live ${sparkline(calibration.live)} ${calibration.live.at(-1) ?? ""}`
+  ];
+  if (calibration.summary) lines.push(`confidence=${calibration.summary.confidence} separation=${calibration.summary.separation} armed=${calibration.summary.armedEligible ? "yes" : "no"}`);
+  return lines.join("\n");
+}
+async function refreshBeacon() {
+  const r = await rpc("beacon.scanCandidates", {}, 2000);
+  candidates = [...(r.candidates ?? [])].sort((a, b) => (b.lastRSSI ?? -999) - (a.lastRSSI ?? -999));
+}
+async function selectStrongestCandidate() {
+  await refreshBeacon();
+  const b = candidates[0];
+  if (!b) { message = "No beacon candidates to select."; return; }
+  await rpc("beacon.select", { uuid: b.uuid, major: b.major, minor: b.minor }, 2000);
+  message = `Selected ${b.uuid} major=${b.major} minor=${b.minor}`;
+}
+function toggleForbiddenSample() {
+  if (calibration.phase === "forbidden") { calibration.phase = "idle"; message = "Forbidden sample stopped."; return; }
+  calibration.phase = "forbidden";
+  message = "Sampling forbidden phone area. Press Forbidden again to stop.";
+}
+function toggleAcceptableSample() {
+  if (calibration.phase === "acceptable") { calibration.phase = "idle"; message = "Acceptable sample stopped."; return; }
+  calibration.phase = "acceptable";
+  message = `Sampling acceptable spot ${calibration.acceptableIndex + 1}. Press Acceptable again to stop.`;
+}
+function redoCurrentCalibration() {
+  if (calibration.phase === "forbidden") calibration.forbidden = [];
+  else if (calibration.phase === "acceptable") calibration.acceptableSets[calibration.acceptableIndex] = [];
+  else { calibration.forbidden = []; calibration.acceptableSets = [[]]; calibration.acceptableIndex = 0; calibration.summary = null; }
+  message = "Cleared current calibration sample.";
+}
+async function ingestCalibrationRSSI() {
+  if (screen !== "beacon" || (calibration.phase !== "forbidden" && calibration.phase !== "acceptable")) return;
+  await refreshBeacon().catch(() => {});
+  let rssi = candidates[0]?.lastRSSI;
+  if (typeof rssi !== "number") {
+    const live = await rpc("beacon.liveRSSI", {}, 800).catch(() => null);
+    rssi = live?.samples?.at(-1)?.rssi;
+  }
+  if (typeof rssi !== "number") return;
+  calibration.live = [...calibration.live, rssi].slice(-80);
+  if (calibration.phase === "forbidden") calibration.forbidden.push(rssi);
+  if (calibration.phase === "acceptable") calibration.acceptableSets[calibration.acceptableIndex].push(rssi);
+}
+async function evaluateCalibration() {
+  const acceptable = calibration.acceptableSets.flat();
+  if (!calibration.forbidden.length || !acceptable.length) { message = "Need forbidden and acceptable samples first."; return; }
+  calibration.summary = await rpc("calibration.evaluate", { forbiddenRSSISamples: calibration.forbidden, acceptableRSSISamples: acceptable }, 2000);
+}
+function suggested() {
+  if (!launchCheck?.checks?.find(([n]) => n === "plist")?.[1]) return "Run Setup to install Faraday.";
+  if (!launchCheck?.checks?.find(([n]) => n === "launchd loaded")?.[1]) return "Run Setup or Advanced → Start LaunchAgent.";
+  if (!status) return "Daemon not reachable. Run Check.";
+  if (status.calibrationConfidence !== "high") return "Calibrate beacon before armed validation.";
+  return "Ready for strict-session validation.";
 }
 
-async function render() {
-  let status;
-  let tail = { events: [] };
-  let launchAgent = { installed: false, loaded: false };
-  let connectionError = null;
-
+async function refresh() {
+  // Run launchd/process/socket check first and reuse its status RPC result.
+  // Bun 1.2.2 can crash when a socket RPC is followed by spawnSync launchctl.
+  try { launchCheck = await check(); status = launchCheck.status; } catch { launchCheck = null; status = null; }
+  await ingestCalibrationRSSI();
   try {
-    [status, tail, launchAgent] = await Promise.all([
-      rpc("faraday.status"),
-      rpc("events.tail", { afterIndex }),
-      rpc("launchAgent.status").catch(() => ({ installed: false, loaded: false }))
-    ]);
-  } catch (error) {
-    connectionError = error;
-    status = {
-      observationSource: "offline",
-      enforcementMode: "n/a",
-      sessionState: "disconnected",
-      lastClassification: "n/a",
-      calibrationConfidence: "n/a",
-      overlayState: "n/a",
-      countdownSeconds: "n/a"
-    };
-  }
+    const tail = await rpc("events.tail", { afterIndex }, 700);
+    if (tail.events?.length) events = [...events, ...tail.events].slice(-8);
+    if (typeof tail.nextIndex === "number") afterIndex = tail.nextIndex;
+  } catch {}
+}
 
-  const events = tail.events ?? [];
-  if (events.length > 0) {
-    recentEvents = [...recentEvents, ...events].slice(-10);
-  }
-  if (typeof tail.nextIndex === "number") afterIndex = tail.nextIndex;
-
-  if (calibration.active && (calibration.phase === "forbidden" || calibration.phase === "acceptable")) {
-    const live = await ingestLiveRSSI();
-    if (typeof live === "number") {
-      calibration.live.push(live);
-      calibration.live = calibration.live.slice(-60);
-      if (calibration.phase === "forbidden") calibration.forbidden.push(live);
-      if (calibration.phase === "acceptable") calibration.acceptableSets[calibration.currentAcceptableIndex].push(live);
-    }
-  }
-
+function render() {
+  const items = cards[screen] ?? cards.home;
+  if (selected >= items.length) selected = items.length - 1;
   const lines = [];
-  lines.push(`${paint("⚡ Faraday", color.bold + color.cyan)} ${paint("Session Dashboard", color.bold)}`);
-  lines.push(paint(`socket ${socketPath}`, color.dim));
-  if (connectionError) {
-    lines.push(paint(`daemon disconnected: ${connectionError.message}`, color.red));
-    lines.push(paint("start it with: swift run FaradayDaemon", color.yellow));
-  }
+  lines.push(`${paint("⚡ Faraday", c.bold + c.cyan)} ${paint(screen.toUpperCase(), c.bold)}`);
+  lines.push(paint(`socket ${socketPath}`, c.dim));
   lines.push("");
-
+  lines.push(renderCards(items));
+  lines.push(box("Suggested next action", [suggested()]));
+  lines.push("");
   lines.push(box("Status", [
-    row("Source", badge(status.observationSource, { simulation: color.magenta, beacon: color.green, default: color.cyan })),
-    row("Mode", badge(status.enforcementMode, { dryRun: color.yellow, armed: color.red })),
-    row("Session", badge(status.sessionState, { inactive: color.gray, idle: color.gray, disconnected: color.red, active: color.green, pendingActivation: color.yellow, violated: color.red, default: color.cyan })),
-    row("Classification", badge(status.lastClassification ?? "n/a", { acceptable: color.green, forbidden: color.red, uncertain: color.yellow, missing: color.gray })),
-    row("Calibration", badge(status.calibrationConfidence ?? "n/a", { high: color.green, medium: color.yellow, low: color.red, default: color.gray })),
-    row("Overlay", badge(status.overlayState ?? "n/a", { hidden: color.gray, showingViolation: color.red, showingDegradedBeaconTrust: color.yellow })),
-    row("Countdown", badge(status.countdownSeconds ?? "n/a", { default: color.yellow })),
-    row("LaunchAgent", `${launchAgent.installed ? paint("installed", color.green) : paint("not installed", color.red)} / ${launchAgent.loaded ? paint("loaded", color.green) : paint("not loaded", color.yellow)}`)
+    row("Daemon", status ? badge("connected") : badge("disconnected")),
+    row("Session", badge(status?.sessionState)),
+    row("Mode", badge(status?.enforcementMode)),
+    row("Class", badge(status?.lastClassification)),
+    row("Source", badge(status?.observationSource)),
+    row("LaunchAgent", launchCheck?.checks?.find(([n]) => n === "launchd loaded")?.[1] ? paint("loaded", c.green) : paint("not loaded", c.yellow))
   ]));
-
-  if (calibration.active) {
-    const acceptable = calibration.acceptableSets.flat();
-    const summary = await calibrationSummary().catch(() => null);
-    const calibrationLines = [
-      row("Phase", badge(calibration.phase, { idle: color.gray, forbidden: color.red, acceptable: color.green })),
-      row("Forbidden", `${calibration.forbidden.length} samples · median ${median(calibration.forbidden) ?? "n/a"} · var ${variance(calibration.forbidden).toFixed(1)}`),
-      row("Acceptable", `${calibration.acceptableSets.length} sets · ${acceptable.length} samples · median ${median(acceptable) ?? "n/a"} · var ${variance(acceptable).toFixed(1)}`),
-      row("Live RSSI", `${paint(sparkline(calibration.live), color.cyan)} ${calibration.live.at(-1) ?? ""}`)
-    ];
-    if (summary) calibrationLines.push(row("Eval", `confidence ${badge(summary.confidence, { high: color.green, medium: color.yellow, low: color.red })} · separation ${summary.separation} · armed ${summary.armedEligible ? paint("yes", color.green) : paint("no", color.red)}`));
-    lines.push("");
-    lines.push(box("Calibration", calibrationLines));
+  if (screen === "beacon") {
+    lines.push("\n" + box("Beacon", [
+      candidates[0] ? `strongest rssi=${candidates[0].lastRSSI} seen=${candidates[0].seenCount}` : "no candidates seen",
+      ...formatCalibration().split("\n").slice(0, 4)
+    ]));
   }
-
-  const eventLines = recentEvents.length === 0
-    ? [paint("(none)", color.dim)]
-    : recentEvents.map((event) => `${paint(String(event.index).padStart(4), color.gray)} ${paint(event.timestamp, color.dim)} ${event.kind}`);
+  if (screen === "logs") lines.push("\n" + box("Recent events", events.length ? events.map((e) => `${String(e.index).padStart(4)} ${e.timestamp} ${e.kind}`) : [paint("none", c.dim)]));
+  const remaining = Math.max(4, terminalRows() - lines.length - 4);
+  if (message) lines.push("\n" + box("Output", String(message).split("\n").slice(-Math.min(8, remaining))));
   lines.push("");
-  lines.push(box("Recent events", eventLines));
-  lines.push("");
-  if (lastCommandMessage) lines.push(lastCommandMessage);
-  lines.push(paint("Commands", color.bold));
-  lines.push("  start <forbidden|acceptable|uncertain|missing>   stop   mode <dryRun|armed>");
-  lines.push("  inject <classification>   replay <scenario>   launchagent <install|restart|remove|status>");
-  lines.push("  calibrate <start|forbidden-start|forbidden-stop|acceptable-start|acceptable-stop|finish>   q");
-
-  lastRender = `${lines.join("\n")}\n`;
-  if (isTTY) {
-    readline.cursorTo(process.stdout, 0, 0);
-    readline.clearScreenDown(process.stdout);
-  }
-  process.stdout.write(lastRender);
-  rl.prompt(true);
+  lines.push(commandMode ? paint(`:${command}`, c.bold + c.cyan) : paint("←/→/↑/↓ navigate · Enter activate · : command · q quit", c.dim));
+  if (isTTY) process.stdout.write("\x1b[?25l\x1b[2J\x1b[H");
+  process.stdout.write(lines.join("\n") + "\n");
 }
 
-async function runCommand(line) {
+async function activate() {
+  const item = (cards[screen] ?? cards.home)[selected];
+  if (!item) return;
+  try { const r = await item[2](); if (r) message = JSON.stringify(r, null, 2); else if (!message) message = `✓ ${item[0]}`; }
+  catch (error) { message = `Command error: ${error.message}`; }
+  await refresh(); render();
+}
+async function runRaw(line) {
   const [cmd, arg] = line.trim().split(/\s+/, 2);
-  if (!cmd) return;
-  if (cmd === "q" || cmd === "quit" || cmd === "exit") process.exit(0);
-  if (cmd === "start") await rpc("session.start", { classification: arg ?? "forbidden" });
-  else if (cmd === "stop") await rpc("session.stop");
-  else if (cmd === "mode") await rpc("enforcement.setMode", { mode: arg });
-  else if (cmd === "inject") await rpc("simulation.inject", { classification: arg });
-  else if (cmd === "replay") await rpc("simulation.replay", { scenario: arg });
-  else if (cmd === "launchagent") {
-    if (arg === "install") await rpc("launchAgent.install");
-    else if (arg === "restart") await rpc("launchAgent.restart");
-    else if (arg === "remove") await rpc("launchAgent.remove");
-    else if (arg === "status") await rpc("launchAgent.status");
-    else throw new Error("usage: launchagent install|restart|remove|status");
-  }
-  else if (cmd === "calibrate") {
-    if (arg === "start") {
-      calibration.active = true;
-      calibration.phase = "idle";
-      calibration.forbidden = [];
-      calibration.acceptableSets = [[]];
-      calibration.currentAcceptableIndex = 0;
-      calibration.live = [];
-    } else if (arg === "forbidden-start") {
-      calibration.phase = "forbidden";
-    } else if (arg === "forbidden-stop") {
-      calibration.phase = "idle";
-    } else if (arg === "acceptable-start") {
-      calibration.phase = "acceptable";
-    } else if (arg === "acceptable-stop") {
-      calibration.phase = "idle";
-    } else if (arg === "acceptable-add") {
-      calibration.acceptableSets.push([]);
-      calibration.currentAcceptableIndex = calibration.acceptableSets.length - 1;
-      calibration.phase = "acceptable";
-    } else if (arg === "redo-forbidden") {
-      calibration.forbidden = [];
-      calibration.phase = "forbidden";
-    } else if (arg === "redo-acceptable") {
-      calibration.acceptableSets[calibration.currentAcceptableIndex] = [];
-      calibration.phase = "acceptable";
-    } else if (arg === "finish") {
-      calibration.phase = "idle";
-    }
-  }
+  try {
+    if (cmd === "start") await rpc("session.start", { classification: arg ?? "forbidden" });
+    else if (cmd === "stop") await rpc("session.stop");
+    else if (cmd === "mode") await rpc("enforcement.setMode", { mode: arg });
+    else if (cmd === "inject") await rpc("simulation.inject", { classification: arg });
+    else if (cmd === "replay") await rpc("simulation.replay", { scenario: arg });
+    else if (cmd === "check") message = formatCheck(await check());
+    else message = "Unknown command";
+    if (!message) message = `✓ ${line}`;
+  } catch (error) { message = `Command error: ${error.message}`; }
 }
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-rl.setPrompt(paint("faraday> ", color.bold + color.cyan));
-
-setInterval(() => {
-  // Do not redraw while user is typing; readline otherwise loses visible input.
-  if (rl.line.length > 0) return;
-  render().catch((error) => {
-    lastCommandMessage = paint(`Render error: ${error.message}`, color.red);
-  });
-}, 1000);
-render().catch((error) => {
-  lastCommandMessage = paint(`Render error: ${error.message}`, color.red);
-});
-
-rl.on("line", async (line) => {
-  try {
-    await runCommand(line);
-    lastCommandMessage = paint(`✓ ${line.trim() || "noop"}`, color.green);
-  } catch (error) {
-    lastCommandMessage = paint(`Command error: ${error.message}`, color.red);
-  }
-  await render().catch((error) => {
-    lastCommandMessage = paint(`Render error: ${error.message}`, color.red);
-  });
-});
-
-rl.on("close", () => {
-  if (isTTY) process.stdout.write(color.reset);
+if (!isTTY) {
+  await refresh();
+  console.log(formatCheck(launchCheck ?? await check()));
   process.exit(0);
+}
+function exitCleanly(code = 0) {
+  process.stdout.write("\x1b[?25h\x1b[0m\n");
+  process.exit(code);
+}
+readline.emitKeypressEvents(process.stdin);
+process.stdin.setRawMode(true);
+await refresh(); render();
+setInterval(async () => { if (!commandMode) { await refresh(); render(); } }, 1500);
+process.on("exit", () => process.stdout.write("\x1b[?25h\x1b[0m"));
+process.stdin.on("keypress", async (str, key) => {
+  if (key.ctrl && key.name === "c") exitCleanly(0);
+  if (commandMode) {
+    if (key.name === "return") { const line = command; commandMode = false; command = ""; await runRaw(line); await refresh(); render(); return; }
+    if (key.name === "escape") { commandMode = false; command = ""; render(); return; }
+    if (key.name === "backspace") command = command.slice(0, -1); else if (str && !key.ctrl && !key.meta) command += str;
+    render(); return;
+  }
+  const items = cards[screen] ?? cards.home;
+  if (key.name === "q") exitCleanly(0);
+  if (str === ":") { commandMode = true; command = ""; render(); return; }
+  if (key.name === "return") return activate();
+  if (key.name === "escape") { screen = "home"; selected = 0; render(); return; }
+  if (key.name === "right") selected = Math.min(items.length - 1, selected + 1);
+  if (key.name === "left") selected = Math.max(0, selected - 1);
+  if (key.name === "down") selected = Math.min(items.length - 1, selected + 3);
+  if (key.name === "up") selected = Math.max(0, selected - 3);
+  render();
 });
