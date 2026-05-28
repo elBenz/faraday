@@ -16,6 +16,7 @@ let launchCheck = null;
 let events = [];
 let commandMode = false;
 let command = "";
+let pendingConfirm = null;
 let afterIndex = -1;
 let candidates = [];
 let calibration = { phase: "idle", forbidden: [], acceptableSets: [[]], acceptableIndex: 0, live: [], summary: null };
@@ -32,7 +33,7 @@ const cards = {
     ["Beacon", "Scan/calibrate", () => { screen = "beacon"; selected = 0; }],
     ["Logs", "Recent events", () => { screen = "logs"; selected = 0; }],
     ["Stop", "Unload daemon", async () => { message = formatCheck(await stop()); }],
-    ["Remove", "Uninstall, keep data", async () => { message = formatCheck(await remove()); }],
+    ["Remove", "Uninstall, keep data", () => { pendingConfirm = { title: "Remove Faraday?", detail: "Uninstall LaunchAgent and binaries; keep ~/.faraday data.", run: async () => { message = formatCheck(await remove({ yes: true })); } }; }],
     ["Advanced", "Dev commands", () => { screen = "advanced"; selected = 0; }]
   ],
   session: [
@@ -114,7 +115,7 @@ function sparkline(values, width = 28) {
   return sample.map((v) => blocks[Math.max(0, Math.min(7, Math.round(((v - min) / (max - min)) * 7)))]).join("");
 }
 function formatCandidates(list) {
-  if (list.length === 0) return "No beacon candidates seen.";
+  if (list.length === 0) return "No beacon candidates seen. Check Bluetooth permission, power on the iBeacon, keep it nearby, then Scan + Select again.";
   return list.slice(0, 8).map((b, i) => `${i + 1}. ${b.uuid ?? "?"} major=${b.major ?? "?"} minor=${b.minor ?? "?"} rssi=${b.lastRSSI ?? "?"} seen=${b.seenCount ?? "?"}`).join("\n");
 }
 function formatCalibration() {
@@ -203,7 +204,9 @@ function render() {
   lines.push(renderCards(items));
   lines.push(box("Suggested next action", [suggested()]));
   lines.push("");
+  const installed = launchCheck?.checks?.find(([n]) => n === "daemon binary")?.[1] && launchCheck?.checks?.find(([n]) => n === "plist")?.[1];
   lines.push(box("Status", [
+    row("Installed", installed ? paint("yes", c.green) : paint("no", c.yellow)),
     row("Daemon", status ? badge("connected") : badge("disconnected")),
     row("Session", badge(status?.sessionState)),
     row("Mode", badge(status?.enforcementMode)),
@@ -213,11 +216,13 @@ function render() {
   ]));
   if (screen === "beacon") {
     lines.push("\n" + box("Beacon", [
-      candidates[0] ? `strongest rssi=${candidates[0].lastRSSI} seen=${candidates[0].seenCount}` : "no candidates seen",
+      candidates[0] ? `strongest rssi=${candidates[0].lastRSSI} seen=${candidates[0].seenCount}` : "no candidates seen — check Bluetooth permission + beacon power",
       ...formatCalibration().split("\n").slice(0, 4)
     ]));
   }
   if (screen === "logs") lines.push("\n" + box("Recent events", events.length ? events.map((e) => `${String(e.index).padStart(4)} ${e.timestamp} ${e.kind}`) : [paint("none", c.dim)]));
+  if ((process.stdout.columns || 80) < 78 || terminalRows() < 24) lines.push("\n" + paint("Terminal small: widen/tall pane for clean dashboard.", c.yellow));
+  if (pendingConfirm) lines.push("\n" + box(pendingConfirm.title, [pendingConfirm.detail, paint("Press y to confirm, n/Esc to cancel.", c.yellow)]));
   const remaining = Math.max(4, terminalRows() - lines.length - 4);
   if (message) lines.push("\n" + box("Output", String(message).split("\n").slice(-Math.min(8, remaining))));
   lines.push("");
@@ -263,6 +268,16 @@ setInterval(async () => { if (!commandMode) { await refresh(); render(); } }, 15
 process.on("exit", () => process.stdout.write("\x1b[?25h\x1b[0m"));
 process.stdin.on("keypress", async (str, key) => {
   if (key.ctrl && key.name === "c") exitCleanly(0);
+  if (pendingConfirm) {
+    if (key.name === "escape" || key.name === "n") { pendingConfirm = null; message = "Cancelled."; render(); return; }
+    if (key.name === "y") {
+      const action = pendingConfirm;
+      pendingConfirm = null;
+      try { await action.run(); } catch (error) { message = `Command error: ${error.message}`; }
+      await refresh(); render(); return;
+    }
+    render(); return;
+  }
   if (commandMode) {
     if (key.name === "return") { const line = command; commandMode = false; command = ""; await runRaw(line); await refresh(); render(); return; }
     if (key.name === "escape") { commandMode = false; command = ""; render(); return; }

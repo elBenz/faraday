@@ -13,9 +13,23 @@ The app senses a BLE beacon attached to the phone or phone case, not the iPhone 
 
 See [`docs/PRODUCT.md`](docs/PRODUCT.md).
 
+## Quickstart
+
+```bash
+./faraday setup --yes   # build, install user LaunchAgent, start daemon, verify
+./faraday               # open dashboard
+./faraday check         # safe status/smoke-lite check
+./faraday smoke         # restart smoke, no visual overlay
+./faraday smoke --overlay  # explicit visual overlay test
+./faraday stop          # unload daemon, keep install files
+./faraday remove        # uninstall LaunchAgent/binaries, keep data
+```
+
+Default enforcement is dry-run. Faraday can lock macOS only after you explicitly switch to armed mode.
+
 ## Current status
 
-Planning and early scaffold phase. Primary docs:
+Working MVP scaffold. Primary docs:
 
 - [`docs/PRD.md`](docs/PRD.md) — software product requirements
 - [`docs/PRODUCT.md`](docs/PRODUCT.md) — open-source and hardware product strategy
@@ -35,12 +49,12 @@ Planning and early scaffold phase. Primary docs:
 
 ## Local dashboard (Bun TUI)
 
-Run the daemon first, then start the dashboard:
+Run `./faraday` after setup. The dashboard connects over `~/.faraday/faraday.sock`, shows live status/event tail, and exposes setup, check, session, beacon scan/calibration, logs, stop, remove, and advanced commands.
+
+Developer path without LaunchAgent:
 
 - `swift run FaradayDaemon`
 - `npm run tui`
-
-The TUI connects over `~/.faraday/faraday.sock`, shows live status/event tail, and supports `start`, `stop`, `mode`, `inject`, `replay`, `launchagent` (install/restart/remove/status), and `calibrate` (TUI calibration wizard) commands.
 
 ## License
 

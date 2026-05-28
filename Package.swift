@@ -15,6 +15,23 @@ let package = Package(
         .target(name: "FaradayCore"),
         .executableTarget(name: "FaradayDaemon", dependencies: ["FaradayCore"]),
         .executableTarget(name: "FaradayOverlayHelper"),
-        .testTarget(name: "FaradayCoreTests", dependencies: ["FaradayCore"])
+        .testTarget(
+            name: "FaradayCoreTests",
+            dependencies: ["FaradayCore"],
+            swiftSettings: [
+                .unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                    "-framework", "Testing",
+                    "-framework", "_Testing_Foundation"
+                ])
+            ]
+        )
     ]
 )

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import FaradayCore
 
@@ -389,9 +390,9 @@ struct FaradayCoreScaffoldTests {
         let active = core.tick(at: start.addingTimeInterval(32))
         #expect(active == .emergencyActive)
 
-        let extension = core.extendEmergencyCowork(at: start.addingTimeInterval(100), duration: 600)
+        let emergencyExtension = core.extendEmergencyCowork(at: start.addingTimeInterval(100), duration: 600)
         let extensionRefused = core.extendEmergencyCowork(at: start.addingTimeInterval(101), duration: 600)
-        #expect(extension == .emergencyExtended)
+        #expect(emergencyExtension == .emergencyExtended)
         #expect(extensionRefused == .emergencyExtensionRefused)
 
         let expired = core.tick(at: start.addingTimeInterval(1_301))
