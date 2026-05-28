@@ -30,6 +30,7 @@ const cards = {
     ["Setup", "Build/install/start", async () => { message = formatCheck(await setup()); }],
     ["Check", "Status + fixes", async () => { screen = "check"; message = formatCheck(await check()); }],
     ["Session", "Focus controls", () => { screen = "session"; selected = 0; }],
+    ["Panic", "Stop + dry-run", async () => { await panicStop(); }],
     ["Beacon", "Scan/calibrate", () => { screen = "beacon"; selected = 0; }],
     ["Logs", "Recent events", () => { screen = "logs"; selected = 0; }],
     ["Stop", "Unload daemon", async () => { message = formatCheck(await stop()); }],
@@ -38,6 +39,7 @@ const cards = {
   ],
   session: [
     ["Start", "Begin strict session", () => rpc("session.start", { classification: "forbidden" })],
+    ["Panic", "Stop + dry-run", async () => { await panicStop(); }],
     ["Stop", "End session", () => rpc("session.stop")],
     ["Dry-run", "No native lock", () => rpc("enforcement.setMode", { mode: "dryRun" })],
     ["Armed", "May lock macOS", () => rpc("enforcement.setMode", { mode: "armed" })],
@@ -190,6 +192,11 @@ async function evaluateCalibration() {
   const acceptable = calibration.acceptableSets.flat();
   if (!calibration.forbidden.length || !acceptable.length) { message = "Need forbidden and acceptable samples first."; return; }
   calibration.summary = await rpc("calibration.evaluate", { forbiddenRSSISamples: calibration.forbidden, acceptableRSSISamples: acceptable }, 2000);
+}
+async function panicStop() {
+  await rpc("enforcement.setMode", { mode: "dryRun" }, 2000).catch(() => {});
+  await rpc("session.stop", {}, 2000).catch(() => {});
+  message = "Panic stop: dry-run set, session stopped, overlay hidden if daemon reachable.";
 }
 function suggested() {
   if (!launchCheck?.checks?.find(([n]) => n === "plist")?.[1]) return "Run Setup to install Faraday.";
