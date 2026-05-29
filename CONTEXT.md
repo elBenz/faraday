@@ -33,7 +33,7 @@ The separate commercialization plan for selling a beacon kit and paid convenienc
 _Avoid_: MVP requirements, hardware design spec
 
 **Working MVP**:
-A real strict session that runs end-to-end on the user's Mac with a real phone-attached beacon: configured beacon identity, near start confirmation, far activation, near violation warning, native Mac lock, post-unlock recheck, local event logging, and automated tests that never lock the developer's Mac.
+A real strict session that runs end-to-end on the user's Mac with a real phone-attached beacon: configured beacon identity, forbidden-proximity start confirmation, acceptable-proximity activation, forbidden-proximity violation warning, native Mac lock, post-unlock recheck, local event logging, and automated tests that never lock the developer's Mac.
 _Avoid_: Simulated-only demo, UI-only prototype, documentation-only milestone
 
 **Almost-working MVP**:
@@ -75,6 +75,10 @@ _Avoid_: Default mode, hidden lock behavior, uncalibrated native lock
 **Beacon-trust failure**:
 A state where Faraday cannot see the configured beacon long enough that proximity can no longer be trusted. Faraday warns clearly, marks the strict session degraded/invalid, and does not lock from missing alone. Recovery requires revalidating the beacon near the desk, then moving it back to the chosen phone location before strict enforcement resumes.
 _Avoid_: Treating absence as proof of far, silent fail-open, fake protection, locking from missing alone, auto-resuming from far after signal returns
+
+**Armed-mode recovery protection**:
+A set of guardrails that prevents armed enforcement from trapping the user in unintended lock or overlay loops while preserving weak-moment resistance. It includes timeboxing, post-unlock cooldowns, repeated-lock circuit breakers, non-modal overlay behavior, and clear UI state. It is stronger than a panic command because it must still help when the screen is locked or the user needs immediate access after unlocking.
+_Avoid_: Panic button, emergency bypass, adversarial unlock, hidden disable switch
 
 ## Relationships
 

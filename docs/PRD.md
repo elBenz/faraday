@@ -18,7 +18,7 @@ Build Faraday as a local-first macOS enforcement system made of three cooperatin
 
 Faraday will use user-calibrated meaning rather than generic distance language. The user calibrates a forbidden phone area, usually the desk or within easy reach, and one or more acceptable phone locations where the phone may live during focus. One acceptable location is enough to start; three distinct acceptable locations are recommended for better confidence. The classifier reports `forbidden`, `acceptable`, `uncertain`, or `missing`.
 
-Dry-run enforcement is the default. It records lock requests and shows warnings without locking macOS. Armed enforcement must be explicitly enabled and is only allowed after beacon identity, calibration, and confidence requirements are satisfied. In armed mode, sustained forbidden proximity during an active strict session triggers a native Faraday-themed overlay countdown and then locks macOS using a native lock adapter.
+Dry-run enforcement is the default. It records lock requests and shows warnings without locking macOS. Armed enforcement must be explicitly enabled and is only allowed after beacon identity, calibration, and confidence requirements are satisfied. In armed mode, sustained forbidden proximity during an active strict session triggers a prominent non-modal Faraday-themed overlay countdown and then locks macOS using a native lock adapter. Armed enforcement must include recovery protection so unintended lock or overlay loops cannot trap the user: timeboxes, post-unlock cooldowns, repeated-lock circuit breakers, and clear recovery state are required before real-beacon armed validation continues.
 
 If the configured beacon becomes missing long enough that Faraday cannot trust proximity, Faraday does not lock from missing alone. It marks the session degraded/invalid, warns clearly, and requires revalidation: the beacon must be seen again in the forbidden phone area, then moved back to an acceptable phone location before strict enforcement resumes.
 
@@ -74,6 +74,19 @@ If the configured beacon becomes missing long enough that Faraday cannot trust p
 48. As a future contributor, I want old `near`/`far` naming replaced with `forbidden`/`acceptable`, so that code matches the domain model.
 49. As a future contributor, I want root LaunchDaemon serious mode deferred, so that the working MVP does not get blocked by GUI-session complexity.
 50. As a future user, I want Faraday to be honest that it is behavioral weak-moment resistance, not adversarial endpoint security, so that expectations are clear.
+51. As a distracted Mac user, I want armed enforcement to be timeboxed by default during MVP validation, so that one experiment cannot unexpectedly keep lock authority active all afternoon.
+52. As a distracted Mac user, I want first real-beacon armed validation capped to about 5 minutes, so that I can safely test native lock behavior without long-lived risk.
+53. As a distracted Mac user, I want armed timebox expiry to return Faraday to dry-run and hide violation countdown UI, so that expired armed validation clearly stops being able to lock.
+54. As a distracted Mac user, I want a cooldown after unlocking from a Faraday lock, so that I can regain immediate access when the phone and computer must be close together.
+55. As a distracted Mac user, I want post-unlock cooldown to warn without locking for about 2 minutes, so that I am not trapped in a lock loop.
+56. As a distracted Mac user, I want repeat locks to still use a countdown, so that Faraday never instantly relocks after cooldown.
+57. As a distracted Mac user, I want repeated lock attempts to trip a circuit breaker, so that an unstable setup switches back to dry-run before it feels hostile.
+58. As a distracted Mac user, I want the circuit breaker to require explicit re-arming, so that Faraday cannot silently resume native lock authority after repeated failures.
+59. As a distracted Mac user, I want the overlay to be prominent but non-modal, so that I can still use the Mac during countdown or cooldown.
+60. As a distracted Mac user, I want the overlay to never steal keyboard or mouse interaction, so that overlay bugs do not block recovery.
+61. As a distracted Mac user, I want missing or uncertain proximity to never trigger a lock, so that BLE ambiguity cannot punish me.
+62. As a distracted Mac user, I want the TUI dashboard and setup flow to show recovery-protection state, so that I understand armed time remaining, cooldowns, and circuit breakers.
+63. As a future user, I want a native GUI or menu-bar control surface considered after the Working MVP, so that setup and beacon management can become easier without delaying core validation.
 
 ## Implementation Decisions
 
@@ -103,15 +116,26 @@ If the configured beacon becomes missing long enough that Faraday cannot trust p
 - Armed enforcement is blocked unless beacon identity is configured, forbidden area is calibrated, at least one acceptable location is calibrated, and confidence is good.
 - Dry-run enforcement is default. It records lock requests and shows warnings without locking macOS.
 - Armed enforcement is explicit and visually obvious in both TUI and overlay.
+- Armed-mode recovery protection is required before real-beacon armed validation continues.
+- Armed enforcement is timeboxed by default during MVP validation; first real-beacon armed validation uses a maximum of about 5 minutes.
+- Armed timebox expiry switches enforcement back to dry-run, hides active violation countdown UI, and records the recovery-protection reason in local events.
+- After a Faraday-caused lock and subsequent unlock, the daemon enters a post-unlock cooldown of about 2 minutes. During cooldown, Faraday may warn but cannot lock.
+- If forbidden proximity remains after post-unlock cooldown, Faraday starts a repeat countdown of about 10–15 seconds before another lock request. Repeat locks are never instant.
+- Repeated lock requests trip a circuit breaker. Initial MVP threshold is 2 lock requests within 10 minutes.
+- Circuit breaker action is to switch enforcement to dry-run, hide active countdown UI, keep the session visible as paused by recovery protection, and require explicit re-arm.
+- Do not add a safe-mode sentinel file for MVP recovery protection; prefer automatic daemon-owned guardrails that work after lock/unlock flows without hidden file switches.
 - Use conservative classification: only classify forbidden when signal strongly matches the forbidden band for the sustain period; only classify acceptable when signal strongly matches acceptable band for the sustain period; otherwise classify uncertain.
 - Uncertain proximity warns but does not lock and does not count as acceptable recovery.
 - Initial timing defaults: forbidden sustain about 5 seconds, acceptable sustain about 15 seconds, missing timeout about 10 seconds, first violation countdown about 30 seconds, repeat/post-unlock countdown about 10–15 seconds.
 - Missing beacon does not lock from missing alone. It creates a beacon-trust failure and marks the strict session degraded/invalid.
 - Beacon-trust recovery requires seeing the beacon in the forbidden phone area again, then seeing acceptable proximity again before strict enforcement resumes.
-- Native overlay should be large, always-on-top, and present across displays where feasible. It should dim the background, show countdown, classification, enforcement mode, and a clear instruction to move the phone to an acceptable location.
+- Native overlay should be large, always-on-top, prominent, non-modal, and present across displays where feasible. It should not steal keyboard or mouse interaction. It should dim the background enough to notice without preventing normal Mac use, show countdown, classification, enforcement mode, armed time remaining or recovery-protection state, and a clear instruction to move the phone to an acceptable location.
 - Use a Faraday visual theme: near-black/graphite base, cyan/teal acceptable state, amber/red forbidden violation, violet/magenta degraded/missing warning, blue dry-run badge, red armed badge, field lines, electrical pulses, signal rings, and instrument-like telemetry.
 - Use lightly themed violation copy, e.g. “Containment breach: phone detected in forbidden area. Move it to an acceptable location.”
 - Native lock implementation starts with a `CGSession -suspend` adapter. The adapter logs attempts and failures and is replaceable later.
+- Daemon status and the local JSON-RPC API should expose recovery-protection fields such as armed timebox expiry, post-unlock cooldown remaining, repeat countdown remaining, circuit-breaker state, and recovery-protection pause reason.
+- The guided TUI setup path should be a single flow for health check, beacon scan/select or manual entry, calibration, dry-run rehearsal, and capped armed validation, with the dashboard remaining available for live status and logs.
+- A native GUI or menu-bar app is a post-MVP design task. It must reuse the daemon API, remain non-authoritative for enforcement, and not replace daemon-owned session or lock decisions.
 - Tests must use mock enforcement adapters so automated tests never lock the developer's Mac.
 - Use macOS session/unlock notifications for clean post-unlock behavior in the user LaunchAgent context.
 - On unlock/session-active after a violation lock, immediately evaluate current classification. Forbidden starts the repeat countdown; acceptable clears the violation; missing enters degraded trust; uncertain warns without locking.
@@ -126,14 +150,14 @@ If the configured beacon becomes missing long enough that Faraday cannot trust p
 - Automated tests must never lock the developer's Mac.
 - The calibrated classifier should be tested with synthetic RSSI sample streams for forbidden, acceptable, uncertain, noisy boundary, missing, and recovery scenarios.
 - Calibration tests should verify confidence results from representative forbidden and acceptable sample sets, including good separation, weak separation, and unusable overlap.
-- Session state machine tests should verify start requirements, waiting-for-acceptable activation, forbidden violation countdown, dry-run lock skip, armed lock request, missing-to-degraded behavior, and recovery through forbidden revalidation then acceptable proximity.
+- Session state machine tests should verify start requirements, waiting-for-acceptable activation, forbidden violation countdown, dry-run lock skip, armed lock request, missing-to-degraded behavior, recovery through forbidden revalidation then acceptable proximity, armed timebox expiry, post-unlock cooldown, repeat countdown, and repeated-lock circuit breaker behavior.
 - Enforcement adapter tests should verify dry-run never calls native lock and armed mode calls the lock adapter only after countdown expiry.
-- Overlay orchestration tests should verify the daemon requests overlay show/update/hide at the right externally visible states without requiring real UI rendering.
+- Overlay orchestration tests should verify the daemon requests overlay show/update/hide at the right externally visible states without requiring real UI rendering, and that recovery-protection transitions hide or update overlay state correctly.
 - JSON-RPC tests should verify command contracts, status shape, error handling, event tailing, and socket cleanup behavior.
 - Persistence tests should verify atomic settings/calibration/status round trips and JSONL event append/load behavior.
 - Simulation source tests should verify injected classifications and replay scenarios drive the same daemon behavior as other observation sources.
 - BLE parser tests should verify iBeacon manufacturer data parsing and allowlist matching without requiring hardware.
-- Manual BLE validation should be performed when the beacon arrives: scan/select, RSSI display, calibration, strict session activation, forbidden violation, overlay, armed lock, unlock repeat countdown, and missing degradation.
+- Manual BLE validation should be performed when the beacon arrives: scan/select, RSSI display, calibration, dry-run rehearsal, capped armed validation, forbidden violation, non-modal overlay, armed lock, post-unlock cooldown, unlock repeat countdown, repeated-lock circuit breaker, and missing degradation.
 - TUI tests should focus on command wiring and render-state mapping where practical; avoid brittle snapshot tests for terminal art unless stable.
 - LaunchAgent integration should use manual smoke tests first: install, start at login, KeepAlive restart after process kill, TUI reconnect, overlay availability, and clean removal.
 - Existing Swift tests should be fixed or migrated so local test runs pass in the current toolchain.
@@ -152,6 +176,8 @@ If the configured beacon becomes missing long enough that Faraday cannot trust p
 - Ecommerce, fulfillment, branded beacon kit work, or paid software features.
 - Treating simulation as final Working MVP evidence.
 - Locking macOS from missing beacon alone.
+- Safe-mode sentinel files for MVP recovery protection.
+- Implementing a native GUI or menu-bar app before Working MVP validation.
 
 ## Further Notes
 
@@ -176,10 +202,10 @@ Definition of done for this PRD:
 - Tests pass locally.
 - Daemon can run manually.
 - TUI connects to daemon.
-- Simulation drives the full strict-session loop: forbidden start, acceptable activation, forbidden violation, overlay countdown, dry-run lock skipped, armed lock path testable with explicit confirmation, and missing-to-degraded behavior.
+- Simulation drives the full strict-session loop: forbidden start, acceptable activation, forbidden violation, overlay countdown, dry-run lock skipped, armed lock path testable with explicit confirmation, armed timebox expiry, post-unlock cooldown, repeated-lock circuit breaker, and missing-to-degraded behavior.
 - Calibration model exists and blocks armed mode when confidence is weak, unusable, or missing.
 - BLE scanner can detect/select iBeacon hardware when available.
-- Native lock works manually in armed mode.
+- Native lock works manually in armed mode with capped armed validation and recovery protection enabled.
 - Unlock/session notification causes repeat countdown if still forbidden.
 - JSON/JSONL logs record key events.
 - User LaunchAgent install is documented and smoke-tested.
