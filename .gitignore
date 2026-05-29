@@ -8,7 +8,11 @@ node_modules/
 
 # local agent scratch / automation
 .scratch/
-.sandcastle/
+.sandcastle/.env
+.sandcastle/.env.*
+.sandcastle/logs/
+.sandcastle/worktrees/
+!.sandcastle/.env.example
 
 # macOS
 .DS_Store
