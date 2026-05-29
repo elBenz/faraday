@@ -30,10 +30,10 @@ const MAX_ITERATIONS = 10;
 // Use host pi Codex subscription login inside each sandbox.
 // Mount ~/.pi/agent read-only, then copy into container-local home so agents do
 // not contend on pi auth/settings lock files or mutate host creds.
-const PLANNER_MODEL = "openai-codex/gpt-5.5";
-const IMPLEMENTER_MODEL = "openai-codex/gpt-5.3-codex";
-const REVIEWER_MODEL = "openai-codex/gpt-5.5";
-const MERGER_MODEL = "openai-codex/gpt-5.5";
+const PLANNER_MODEL = "openai-codex/gpt-5.5:high";
+const IMPLEMENTER_MODEL = "openai-codex/gpt-5.3-codex:high";
+const REVIEWER_MODEL = "openai-codex/gpt-5.5:xhigh";
+const MERGER_MODEL = "openai-codex/gpt-5.5:high";
 
 const makeSandbox = () =>
   docker({
