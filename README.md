@@ -31,8 +31,9 @@ Default enforcement is dry-run. Faraday can lock macOS only after you explicitly
 
 Working MVP scaffold. Primary docs:
 
-- [`docs/PRD.md`](docs/PRD.md) — software product requirements
-- [`docs/PRODUCT.md`](docs/PRODUCT.md) — open-source and hardware product strategy
+- [`docs/PRODUCT.md`](docs/PRODUCT.md) — stable product baseline and product strategy
+- [`docs/specs/0001-working-mvp.md`](docs/specs/0001-working-mvp.md) — Working MVP feature PRD
+- [`docs/specs/0002-armed-mode-recovery-protection.md`](docs/specs/0002-armed-mode-recovery-protection.md) — armed recovery protection PRD
 - [`docs/BEACONS.md`](docs/BEACONS.md) — beacon compatibility notes
 - [`docs/LAUNCHD.md`](docs/LAUNCHD.md) — launchd install/restart/remove + smoke tests
 - [`docs/MVP_VALIDATION.md`](docs/MVP_VALIDATION.md) — end-to-end manual validation harness and success-metric worksheet

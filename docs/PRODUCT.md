@@ -1,45 +1,70 @@
-# Faraday Product Strategy
+# Faraday Product
 
-Faraday is an open-source macOS focus enforcement app. The software remains free and open source; commercialization comes from hardware convenience, setup help, and support around compatible BLE beacons.
+Faraday is a local-first macOS focus enforcement product. It keeps a phone-attached BLE beacon out of the user's forbidden phone area during strict focus sessions.
 
-## Open-source posture
+`docs/PRODUCT.md` is the stable product baseline. Feature PRDs live in `docs/specs/`. Do not use a single global PRD file as the source of truth.
+
+## Product principles
+
+- Local-first: no cloud account, subscription, telemetry, or required online service for core use.
+- Beacon-based: treat the BLE beacon as the sensed object; do not claim direct iPhone sensing.
+- Weak-moment resistance: interrupt casual phone checking; do not promise adversarial security against a determined local admin.
+- User-calibrated meaning: enforce forbidden and acceptable phone locations, not generic distance.
+- Dry-run first: native lock enforcement is never the default.
+- Daemon authority: sensing, classification, session state, overlay orchestration, persistence, and lock decisions belong to the daemon, not the UI.
+- Test safety: automated tests must never lock the developer's Mac.
+
+## Current product shape
+
+Faraday is built from three cooperating local processes:
+
+- Swift daemon: BLE sensing, calibrated classification, session state, persistence, overlay orchestration, local JSON-RPC API, and lock enforcement.
+- Swift overlay helper: prominent non-modal warning UI.
+- Bun TUI: setup, calibration, status, simulation, session control, and logs through the daemon API.
+
+Future GUI or menu-bar surfaces may reuse the same daemon API, but must not own enforcement decisions.
+
+## Core behavior baseline
+
+- A strict session starts only after Faraday confirms the configured beacon is alive in the forbidden phone area.
+- The session becomes active only after the beacon reaches acceptable proximity.
+- Forbidden proximity during an active session shows a prominent non-modal overlay and starts a countdown.
+- Armed enforcement may lock macOS only after explicit arming, eligible calibration, sustained forbidden proximity, and countdown expiry.
+- Missing beacon creates a beacon-trust failure and never locks by itself.
+- Uncertain proximity warns but never locks and does not count as acceptable recovery.
+- Armed-mode recovery protection is required before real-beacon armed validation: timebox, post-unlock cooldown, repeat-lock countdown, repeated-lock circuit breaker, and clear UI state.
+
+## Hardware and commercialization posture
+
+Faraday software is open source. Commercialization, if any, comes from hardware convenience, setup help, and support around compatible BLE beacons.
+
+### Open-source posture
 
 - Release the full macOS app/daemon as open source.
 - Use the Apache-2.0 license.
 - Keep all software features free.
-- Do not paywall focus enforcement, calibration, emergency mode, installer behavior, or compatibility support inside the app.
-- Preserve local-first behavior: no cloud account, subscription, telemetry, or required online service for core use.
+- Do not paywall focus enforcement, calibration, recovery protection, installer behavior, or compatibility support inside the app.
 
-## Hardware strategy
+### Hardware strategy
 
-Faraday should support bring-your-own compatible iBeacons as a first-class path. Hardware sales must improve convenience, not create lock-in.
+Faraday supports bring-your-own compatible iBeacons as a first-class path. Hardware sales must improve convenience, not create lock-in.
 
-### Stage 1 — Compatibility list
+1. Compatibility list: test common configurable BLE/iBeacon devices and document recommended settings.
+2. Recommended Beacon Kit: optional curated third-party beacon bundle if demand appears.
+3. Faraday Beacon Kit: possible later branded bundle only if it materially improves setup, reliability, or user trust.
 
-Near-term strategy: publish a compatibility list instead of selling hardware.
+## Documentation model
 
-- Test common configurable BLE/iBeacon devices.
-- Document recommended UUID, major/minor, transmit power, advertising interval, battery expectations, and mounting guidance.
-- Clearly distinguish tested, likely-compatible, and unsupported devices.
-- Keep setup possible for users who buy their own beacon.
+- `docs/PRODUCT.md`: stable product baseline and product strategy.
+- `CONTEXT.md`: glossary only; terms, relationships, and avoid-language.
+- `docs/specs/`: feature PRDs and major-change specs.
+- `docs/adr/`: hard-to-reverse architecture decisions with trade-offs.
+- Beads issues: small vertical implementation slices linked to durable specs.
 
-### Stage 2 — Recommended Beacon Kit
+## Active specs
 
-If demand appears, sell a curated kit using third-party beacon hardware.
-
-- Bundle a tested beacon with setup materials.
-- Prefer preconfigured or easy-to-configure settings.
-- Sell convenience, reliability, and reduced setup friction.
-- Continue supporting bring-your-own beacons.
-- Gate this stage on the viability decision document in `docs/BEACON_KIT_VIABILITY.md`.
-
-### Stage 3 — Faraday Beacon Kit
-
-If usage and support volume justify it, consider a branded hardware bundle.
-
-- Treat this as a later product decision, not MVP scope.
-- Only pursue if it materially improves setup, reliability, or user trust.
-- Avoid making branded hardware mandatory for the open-source app.
+- `docs/specs/0001-working-mvp.md` — Working MVP feature PRD.
+- `docs/specs/0002-armed-mode-recovery-protection.md` — Armed-mode recovery protection feature PRD.
 
 ## Product boundaries
 
@@ -59,3 +84,4 @@ Out of scope for the current software MVP:
 - Required proprietary beacon
 - Paid software features
 - Cloud accounts or subscriptions
+- Native GUI or menu-bar implementation before Working MVP validation

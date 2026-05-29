@@ -88,7 +88,7 @@ _Avoid_: Panic button, emergency bypass, adversarial unlock, hidden disable swit
 - A **Future beacon kit** can later package **Paid convenience** but is not required to use the **Open-source app**.
 - **Paid convenience** must not paywall any software feature.
 - All software features in the **Open-source app** stay free.
-- **Product strategy** belongs in `docs/PRODUCT.md`, while software behavior belongs in `docs/PRD.md`.
+- **Product strategy** and stable product baseline belong in `docs/PRODUCT.md`, while feature PRDs and major-change specs belong in `docs/specs/`.
 
 ## Example dialogue
 

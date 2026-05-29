@@ -1,6 +1,6 @@
 # MVP Validation Harness
 
-This harness validates the Faraday Working MVP against `docs/PRD.md` and the shared language in `CONTEXT.md`. It is for real-beacon evidence only; simulation is useful development evidence but does not complete the Working MVP.
+This harness validates the Faraday Working MVP against `docs/specs/0001-working-mvp.md`, recovery-protection requirements in `docs/specs/0002-armed-mode-recovery-protection.md`, and the shared language in `CONTEXT.md`. It is for real-beacon evidence only; simulation is useful development evidence but does not complete the Working MVP.
 
 ## 1) Hardware setup checklist (phone-attached configurable iBeacon)
 

@@ -4,7 +4,7 @@
 
 Faraday: macOS focus enforcement. Mac locks when phone-attached BLE beacon is too near during strict focus session.
 
-Primary product spec: `docs/PRD.md`.
+Stable product baseline: `docs/PRODUCT.md`. Feature PRDs/specs: `docs/specs/`.
 
 ## Work rules
 
@@ -25,8 +25,12 @@ Primary product spec: `docs/PRD.md`.
 
 ## Docs
 
-- Update `docs/PRD.md` when product behavior or scope changes.
-- Add ADRs under `docs/adr/` for major architecture decisions once implementation starts.
+- Keep `docs/PRODUCT.md` as the stable product baseline and product strategy. Product.md is mandatory.
+- Keep `CONTEXT.md` glossary-only: domain terms, relationships, and avoid-language. Do not put feature specs or implementation plans there.
+- Put feature PRDs and major-change specs under `docs/specs/`.
+- Link Beads issues to durable spec files via `--spec-id`; issue bodies should stay summary + acceptance criteria, not duplicate full PRDs.
+- Do not create a global `docs/PRD.md`; it becomes misleading as feature specs grow.
+- Add ADRs under `docs/adr/` only for hard-to-reverse architecture decisions with real trade-offs.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
 ## Beads Issue Tracker

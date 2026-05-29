@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-05-21
-- Related PRD: `docs/PRD.md`
+- Related spec: `docs/specs/0001-working-mvp.md`
 
 ## Context
 

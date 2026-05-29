@@ -8,7 +8,7 @@ Evaluate whether Faraday should move from compatibility-list-only to a recommend
 
 - `docs/MVP_VALIDATION.md` (manual validation harness + PRD success metrics)
 - `docs/BEACONS.md` (compatibility evidence)
-- `docs/PRD.md` and `docs/PRODUCT.md` (BYO-first and MVP boundaries)
+- `docs/PRODUCT.md` and `docs/specs/0001-working-mvp.md` (BYO-first and MVP boundaries)
 
 ## Current evidence snapshot (2026-05-21)
 

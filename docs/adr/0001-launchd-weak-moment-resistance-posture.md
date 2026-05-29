@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-05-21
 - Related issue: faraday-16z
-- Related PRD: `docs/PRD.md` (User stories 26–28, 39–40; implementation decisions on launchd)
+- Related spec: `docs/specs/0001-working-mvp.md` (User stories 26–28, 39–40; implementation decisions on launchd)
 
 ## Context
 
