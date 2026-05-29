@@ -7,8 +7,7 @@
     "test": "node scripts/run-swift-package.js test",
     "tui": "bun tui/dashboard.mjs"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@ai-hero/sandcastle": "^0.5.10"
+    "@ai-hero/sandcastle": "^0.6.6"
   }
 }

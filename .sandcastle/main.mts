@@ -30,10 +30,15 @@ const MAX_ITERATIONS = 10;
 // Use host pi Codex subscription login inside each sandbox.
 // Mount ~/.pi/agent read-only, then copy into container-local home so agents do
 // not contend on pi auth/settings lock files or mutate host creds.
-const PLANNER_MODEL = "openai-codex/gpt-5.5:high";
-const IMPLEMENTER_MODEL = "openai-codex/gpt-5.3-codex:high";
-const REVIEWER_MODEL = "openai-codex/gpt-5.5:xhigh";
-const MERGER_MODEL = "openai-codex/gpt-5.5:high";
+const PLANNER_MODEL = "openai-codex/gpt-5.5";
+const IMPLEMENTER_MODEL = "openai-codex/gpt-5.3-codex";
+const REVIEWER_MODEL = "openai-codex/gpt-5.5";
+const MERGER_MODEL = "openai-codex/gpt-5.5";
+
+const PLANNER_THINKING = "high";
+const IMPLEMENTER_THINKING = "high";
+const REVIEWER_THINKING = "xhigh";
+const MERGER_THINKING = "high";
 
 const makeSandbox = () =>
   docker({
@@ -85,7 +90,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     sandbox: makeSandbox(),
     name: "planner",
     maxIterations: 1,
-    agent: sandcastle.pi(PLANNER_MODEL),
+    agent: sandcastle.pi(PLANNER_MODEL, { thinking: PLANNER_THINKING }),
     promptFile: "./.sandcastle/plan-prompt.md",
   });
 
@@ -134,7 +139,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     const implement = await taskSandbox.run({
       name: "implementer",
       maxIterations: 100,
-      agent: sandcastle.pi(IMPLEMENTER_MODEL),
+      agent: sandcastle.pi(IMPLEMENTER_MODEL, { thinking: IMPLEMENTER_THINKING }),
       promptFile: "./.sandcastle/implement-prompt.md",
       promptArgs: {
         TASK_ID: issue.id,
@@ -156,7 +161,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     const review = await taskSandbox.run({
       name: "reviewer",
       maxIterations: 1,
-      agent: sandcastle.pi(REVIEWER_MODEL),
+      agent: sandcastle.pi(REVIEWER_MODEL, { thinking: REVIEWER_THINKING }),
       promptFile: "./.sandcastle/review-prompt.md",
       promptArgs: {
         TASK_ID: issue.id,
@@ -189,7 +194,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     sandbox: makeSandbox(),
     name: "merger",
     maxIterations: 1,
-    agent: sandcastle.pi(MERGER_MODEL),
+    agent: sandcastle.pi(MERGER_MODEL, { thinking: MERGER_THINKING }),
     promptFile: "./.sandcastle/merge-prompt.md",
     promptArgs: {
       BRANCHES: `- ${issue.branch}`,
