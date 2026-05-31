@@ -1,0 +1,306 @@
+{
+  "migrated_at": "2026-05-31T08:58:46.148Z",
+  "source": "docs/archive/beads-issues-export.jsonl",
+  "issues": {
+    "faraday-moj": {
+      "number": 1,
+      "url": "https://github.com/elBenz/faraday/issues/1",
+      "title": "Centralize Faraday PRD and Beads issues",
+      "status_at_migration": "closed"
+    },
+    "faraday-7xe": {
+      "number": 2,
+      "url": "https://github.com/elBenz/faraday/issues/2",
+      "title": "Finish open-source repo foundation",
+      "status_at_migration": "closed"
+    },
+    "faraday-ijp": {
+      "number": 3,
+      "url": "https://github.com/elBenz/faraday/issues/3",
+      "title": "Draft beacon compatibility buying guide",
+      "status_at_migration": "closed"
+    },
+    "faraday-ned": {
+      "number": 4,
+      "url": "https://github.com/elBenz/faraday/issues/4",
+      "title": "Scaffold Swift macOS app core",
+      "status_at_migration": "closed"
+    },
+    "faraday-dy6": {
+      "number": 5,
+      "url": "https://github.com/elBenz/faraday/issues/5",
+      "title": "Implement RSSI classification tracer",
+      "status_at_migration": "closed"
+    },
+    "faraday-4a0": {
+      "number": 6,
+      "url": "https://github.com/elBenz/faraday/issues/6",
+      "title": "Implement strict session start flow",
+      "status_at_migration": "closed"
+    },
+    "faraday-heq": {
+      "number": 7,
+      "url": "https://github.com/elBenz/faraday/issues/7",
+      "title": "Implement unsafe proximity lock path",
+      "status_at_migration": "closed"
+    },
+    "faraday-7za": {
+      "number": 8,
+      "url": "https://github.com/elBenz/faraday/issues/8",
+      "title": "Integrate beacon allowlist scanner",
+      "status_at_migration": "closed"
+    },
+    "faraday-dk5": {
+      "number": 9,
+      "url": "https://github.com/elBenz/faraday/issues/9",
+      "title": "Implement missing-beacon enforcement path",
+      "status_at_migration": "closed"
+    },
+    "faraday-y1t": {
+      "number": 10,
+      "url": "https://github.com/elBenz/faraday/issues/10",
+      "title": "Add local persistence and event log",
+      "status_at_migration": "closed"
+    },
+    "faraday-c9p": {
+      "number": 11,
+      "url": "https://github.com/elBenz/faraday/issues/11",
+      "title": "Implement guided calibration path",
+      "status_at_migration": "closed"
+    },
+    "faraday-eck": {
+      "number": 12,
+      "url": "https://github.com/elBenz/faraday/issues/12",
+      "title": "Implement Emergency Co-work Mode",
+      "status_at_migration": "closed"
+    },
+    "faraday-16z": {
+      "number": 13,
+      "url": "https://github.com/elBenz/faraday/issues/13",
+      "title": "Decide launchd weak-moment resistance posture",
+      "status_at_migration": "closed"
+    },
+    "faraday-wnv": {
+      "number": 14,
+      "url": "https://github.com/elBenz/faraday/issues/14",
+      "title": "Validate first real beacon with scanner",
+      "status_at_migration": "closed"
+    },
+    "faraday-5zr": {
+      "number": 15,
+      "url": "https://github.com/elBenz/faraday/issues/15",
+      "title": "Build end-to-end MVP validation harness",
+      "status_at_migration": "closed"
+    },
+    "faraday-otm": {
+      "number": 16,
+      "url": "https://github.com/elBenz/faraday/issues/16",
+      "title": "Evaluate recommended beacon kit viability",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk": {
+      "number": 17,
+      "url": "https://github.com/elBenz/faraday/issues/17",
+      "title": "Implement Faraday Working MVP",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.1": {
+      "number": 18,
+      "url": "https://github.com/elBenz/faraday/issues/18",
+      "title": "Fix test baseline and rename proximity domain",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.2": {
+      "number": 19,
+      "url": "https://github.com/elBenz/faraday/issues/19",
+      "title": "Add calibrated proximity classifier",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.3": {
+      "number": 20,
+      "url": "https://github.com/elBenz/faraday/issues/20",
+      "title": "Add daemon core with JSON persistence",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.4": {
+      "number": 21,
+      "url": "https://github.com/elBenz/faraday/issues/21",
+      "title": "Add Unix socket JSON-RPC API",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.5": {
+      "number": 22,
+      "url": "https://github.com/elBenz/faraday/issues/22",
+      "title": "Add simulated observation source and replay scenarios",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.6": {
+      "number": 23,
+      "url": "https://github.com/elBenz/faraday/issues/23",
+      "title": "Add Bun TUI session dashboard",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.7": {
+      "number": 24,
+      "url": "https://github.com/elBenz/faraday/issues/24",
+      "title": "Add native overlay helper and orchestration",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.8": {
+      "number": 25,
+      "url": "https://github.com/elBenz/faraday/issues/25",
+      "title": "Add dry-run and armed lock enforcement",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.9": {
+      "number": 26,
+      "url": "https://github.com/elBenz/faraday/issues/26",
+      "title": "Add unlock notification recheck flow",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.10": {
+      "number": 27,
+      "url": "https://github.com/elBenz/faraday/issues/27",
+      "title": "Add iBeacon scanner and scan-select setup",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.11": {
+      "number": 28,
+      "url": "https://github.com/elBenz/faraday/issues/28",
+      "title": "Validate real iBeacon scanner hardware path",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.12": {
+      "number": 29,
+      "url": "https://github.com/elBenz/faraday/issues/29",
+      "title": "Add TUI calibration wizard",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.13": {
+      "number": 30,
+      "url": "https://github.com/elBenz/faraday/issues/30",
+      "title": "Add missing-beacon degraded recovery",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.14": {
+      "number": 31,
+      "url": "https://github.com/elBenz/faraday/issues/31",
+      "title": "Add user LaunchAgent install controls",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.15": {
+      "number": 32,
+      "url": "https://github.com/elBenz/faraday/issues/32",
+      "title": "Smoke-test user LaunchAgent in macOS",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.16": {
+      "number": 33,
+      "url": "https://github.com/elBenz/faraday/issues/33",
+      "title": "Run real-beacon Working MVP validation",
+      "status_at_migration": "in_progress"
+    },
+    "faraday-45a": {
+      "number": 34,
+      "url": "https://github.com/elBenz/faraday/issues/34",
+      "title": "Fix TUI redraw/readability during LaunchAgent smoke test",
+      "status_at_migration": "in_progress"
+    },
+    "faraday-bcp": {
+      "number": 35,
+      "url": "https://github.com/elBenz/faraday/issues/35",
+      "title": "Implement visible native overlay helper UI",
+      "status_at_migration": "closed"
+    },
+    "faraday-kn4": {
+      "number": 36,
+      "url": "https://github.com/elBenz/faraday/issues/36",
+      "title": "Add one-command local install and smoke-check flow",
+      "status_at_migration": "closed"
+    },
+    "faraday-5js": {
+      "number": 37,
+      "url": "https://github.com/elBenz/faraday/issues/37",
+      "title": "Make pre-validation CLI and test polish",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.17": {
+      "number": 38,
+      "url": "https://github.com/elBenz/faraday/issues/38",
+      "title": "Add armed-mode recovery protection",
+      "status_at_migration": "open"
+    },
+    "faraday-alk.18": {
+      "number": 39,
+      "url": "https://github.com/elBenz/faraday/issues/39",
+      "title": "Design native GUI/menu-bar control surface",
+      "status_at_migration": "open"
+    },
+    "faraday-alk.19": {
+      "number": 40,
+      "url": "https://github.com/elBenz/faraday/issues/40",
+      "title": "Reorganize product and feature spec docs",
+      "status_at_migration": "closed"
+    },
+    "faraday-alk.17.1": {
+      "number": 41,
+      "url": "https://github.com/elBenz/faraday/issues/41",
+      "title": "Add recovery-protection state model with armed timebox",
+      "status_at_migration": "open"
+    },
+    "faraday-alk.17.2": {
+      "number": 42,
+      "url": "https://github.com/elBenz/faraday/issues/42",
+      "title": "Add post-unlock cooldown path",
+      "status_at_migration": "open"
+    },
+    "faraday-alk.17.3": {
+      "number": 43,
+      "url": "https://github.com/elBenz/faraday/issues/43",
+      "title": "Add repeat countdown and circuit breaker",
+      "status_at_migration": "open"
+    },
+    "faraday-alk.17.4": {
+      "number": 44,
+      "url": "https://github.com/elBenz/faraday/issues/44",
+      "title": "Render recovery state through non-modal overlay updates",
+      "status_at_migration": "open"
+    },
+    "faraday-alk.17.5": {
+      "number": 45,
+      "url": "https://github.com/elBenz/faraday/issues/45",
+      "title": "Expose recovery protection in TUI dashboard and guided setup",
+      "status_at_migration": "open"
+    },
+    "faraday-alk.17.6": {
+      "number": 46,
+      "url": "https://github.com/elBenz/faraday/issues/46",
+      "title": "Add end-to-end safety regression coverage",
+      "status_at_migration": "open"
+    },
+    "faraday-rdb": {
+      "number": 47,
+      "url": "https://github.com/elBenz/faraday/issues/47",
+      "title": "Make Sandcastle workflow sequential with review gate",
+      "status_at_migration": "closed"
+    },
+    "faraday-7e7": {
+      "number": 48,
+      "url": "https://github.com/elBenz/faraday/issues/48",
+      "title": "Set Sandcastle agent reasoning levels",
+      "status_at_migration": "closed"
+    },
+    "faraday-aii": {
+      "number": 49,
+      "url": "https://github.com/elBenz/faraday/issues/49",
+      "title": "Upgrade Sandcastle for Pi thinking options",
+      "status_at_migration": "closed"
+    },
+    "faraday-d87": {
+      "number": 50,
+      "url": "https://github.com/elBenz/faraday/issues/50",
+      "title": "Migrate issue tracker to GitHub Issues",
+      "status_at_migration": "open"
+    }
+  }
+}

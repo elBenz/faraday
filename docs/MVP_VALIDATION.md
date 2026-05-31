@@ -111,7 +111,7 @@ Mark pass/fail and include evidence pointer (log rows + relevant event timestamp
 | Beacon-trust failures | Tracked; no native lock from missing alone |  |  |  |
 | Bypass behavior | No kill/unload/uninstall during test period |  |  |  |
 
-## 5) Feeding findings into Beads follow-up issues
+## 5) Feeding findings into GitHub follow-up issues
 
 Create issues for any failures or reliability gaps.
 
@@ -129,6 +129,6 @@ Suggested issue format:
 Commands:
 
 ```bash
-bd create "Validation finding: <short label>"
-bd show <new-id>
+gh issue create --title "Validation finding: <short label>" --body-file <body.md>
+gh issue view <number> --comments
 ```

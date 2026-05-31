@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "faraday",
-  "project_id": "8f7c6eb7-6cd6-4427-8ff3-a5f025f45f17"
-}

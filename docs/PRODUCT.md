@@ -59,7 +59,7 @@ Faraday supports bring-your-own compatible iBeacons as a first-class path. Hardw
 - `CONTEXT.md`: glossary only; terms, relationships, and avoid-language.
 - `docs/specs/`: feature PRDs and major-change specs.
 - `docs/adr/`: hard-to-reverse architecture decisions with trade-offs.
-- Beads issues: small vertical implementation slices linked to durable specs.
+- GitHub Issues: small vertical implementation slices linked to durable specs.
 
 ## Active specs
 
